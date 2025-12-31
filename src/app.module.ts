@@ -15,7 +15,7 @@ import { AppGateway } from './board/board.gateway';
       port: 5432,
       username: 'mahan',
       password: 'mahan',
-      database: 'mydb02',
+      database: 'board',
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       migrations: [__dirname + '/migrations/*{.ts,.js}'],
       autoLoadEntities: true,
