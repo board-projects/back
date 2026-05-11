@@ -1,14 +1,24 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ChatGateway } from './chat/chat.gateway';
 import { UserModule } from './user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthModule } from './auth/auth.module';
 import { AppGateway } from './board/board.gateway';
+import { AuthModule } from './auth/auth.module';
+import { MailModule } from './mail/mail.module';
+import { RedisModule } from '@nestjs-modules/ioredis';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
+    RedisModule.forRoot({
+      type: 'single',
+      url: 'redis://localhost:6379',
+    }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: 'localhost',
@@ -22,9 +32,10 @@ import { AppGateway } from './board/board.gateway';
       synchronize: false,
     }),
     UserModule,
+    MailModule,
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService, ChatGateway, AppGateway],
+  providers: [AppService, AppGateway],
 })
 export class AppModule {}

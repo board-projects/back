@@ -1,38 +1,40 @@
-import { Injectable } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
-import { SafeUserDto } from './dto/safe-user.dto';
-import { UserService } from '../user/user.service';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import Redis from 'ioredis';
+import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
-import { plainToInstance } from 'class-transformer';
 
 @Injectable()
 export class AuthService {
-  constructor(
-    private userService: UserService,
-    private jwtService: JwtService,
-  ) {}
 
-  async validateUser(
-    email: string,
-    password: string,
-  ): Promise<SafeUserDto | null> {
-    const user = await this.userService.findByEmail(email);
-    if (user && (await bcrypt.compare(password, user.password))) {
-      return plainToInstance(SafeUserDto, user);
+     constructor(
+        @InjectRedis() private readonly redis: Redis,
+        private readonly mailService: MailService,
+        private readonly jwtService: JwtService,
+    ) {}
+
+    async sendOtp(email: string) {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await this.redis.set(`otp:${email}`, otp, 'EX', 120);
+        await this.mailService.sendUserOtp(email, otp);
+        return { message: 'OTP sent to email' };
     }
 
-    return null;
-  }
+    async verifyOtp(email: string, code: string) {
+        const cacheOtp = await this.redis.get(`otp:${email}`);
 
-  login(user: SafeUserDto) {
-    const payload = { email: user.email, sub: user.id };
-    return {
-      access_token: this.jwtService.sign(payload),
-    };
-  }
+        if (!cacheOtp || cacheOtp !== code) {
+            throw new BadRequestException('Invalid or expired OTP');
+        }
 
-  async register(email: string, password: string) {
-    const hashed = await bcrypt.hash(password, 10);
-    return this.userService.create(email, hashed);
-  }
+        await this.redis.del(`otp:${email}`);
+
+        const payload = { email: email, sub: 'user_id_here' };
+
+        return {
+            message: 'ورود موفقیت‌آمیز',
+            access_token: this.jwtService.sign(payload),
+            user: { email }
+        }
+    }
 }
