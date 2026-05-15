@@ -14,11 +14,10 @@ export class AuthService {
     ) {}
 
     async sendOtp(email: string) {
-        console.log('DEBUG - Gmail User:', process.env.GMAIL_USER);
-        // const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        // await this.redis.set(`otp:${email}`, otp, 'EX', 120);
-        // await this.mailService.sendUserOtp(email, otp);
-        // return { message: 'OTP sent to email' };
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await this.redis.set(`otp:${email}`, otp, 'EX', 120);
+        await this.mailService.sendUserOtp(email, otp);
+        return { message: 'OTP sent to email' };
     }
 
     async verifyOtp(email: string, code: string) {
