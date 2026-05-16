@@ -29,6 +29,7 @@ export class AuthController {
 
         return {
             message: 'login successful',
+            access_token: token,
             user
         };
     }
