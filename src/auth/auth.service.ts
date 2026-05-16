@@ -31,9 +31,9 @@ export class AuthService {
 
         const payload = { email: email, sub: 'user_id_here' };
 
+        const token = this.jwtService.sign(payload);
         return {
-            message: 'ورود موفقیت‌آمیز',
-            access_token: this.jwtService.sign(payload),
+            token,
             user: { email }
         }
     }
