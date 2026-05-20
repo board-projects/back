@@ -3,18 +3,26 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import Redis from 'ioredis';
 import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
+import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class AuthService {
 
      constructor(
         @InjectRedis() private readonly redis: Redis,
+        private readonly userService: UserService,
         private readonly mailService: MailService,
         private readonly jwtService: JwtService,
     ) {}
 
     async sendOtp(email: string) {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        const user = this.userService.findByEmail(email);
+        // if (email === null) {
+        //     this.userService.create(email)
+        // }
+
         await this.redis.set(`otp:${email}`, otp, 'EX', 120);
         await this.mailService.sendUserOtp(email, otp);
         return { message: 'OTP sent to email' };

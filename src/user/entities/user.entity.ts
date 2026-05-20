@@ -17,14 +17,20 @@ export class User {
   @Column({ unique: true })
   username: string;
 
-  @Column()
-  password: string;
-
   @Column({ nullable: true })
   firstname: string;
 
   @Column({ nullable: true })
   lastname?: string;
+
+  @Column({ name: 'is_verified', default: false })
+  isVerified: boolean;
+
+  @Column({ name: 'otp_code', nullable: true })
+  otpCode: string;
+
+  @Column({ name: 'otp_expires_at', type: 'timestamp', nullable: true })
+  otpExpiresAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;
