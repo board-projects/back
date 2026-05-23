@@ -4,6 +4,8 @@ import Redis from 'ioredis';
 import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from 'src/user/user.service';
+import { CreateUserDto } from 'src/user/dto/create-user.dto';
+import { use } from 'passport';
 
 @Injectable()
 export class AuthService {
@@ -18,14 +20,11 @@ export class AuthService {
     async sendOtp(email: string) {
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-        const user = this.userService.findByEmail(email);
-        // if (email === null) {
-        //     this.userService.create(email)
-        // }
+        const user = await this.userService.getOrCreate({ email: email, username: email });
 
         await this.redis.set(`otp:${email}`, otp, 'EX', 120);
         await this.mailService.sendUserOtp(email, otp);
-        return { message: 'OTP sent to email' };
+        return { message: 'OTP sent to: ' + user.email };
     }
 
     async verifyOtp(email: string, code: string) {
