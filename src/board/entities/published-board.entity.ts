@@ -2,7 +2,7 @@ import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, Unique, UpdateDat
 import type { BoardUpdate } from '../board.protocol';
 import { Board } from './board.entity';
 
-export type SheetLayout = { width: number; height: number; dots: boolean };
+export type SheetLayout = { width: number; height: number; dots: boolean; backgroundColor?: string };
 
 @Entity({ name: 'published_boards' })
 @Unique('UQ_published_boards_public_reference', ['publicReference'])

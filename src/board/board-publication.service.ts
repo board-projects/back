@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
-import type { BoardUpdate } from './board.protocol';
+import { parseBoardChanges, type BoardUpdate } from './board.protocol';
 import { captureBoardPage } from './board-page-capture';
 import { BoardRoomService } from './board-room.service';
 import { Board } from './entities/board.entity';
@@ -51,10 +51,24 @@ export class BoardPublicationService {
     return { ...page, snapshot: publicSnapshot(page.snapshot) };
   }
 
-  async publishPage(ownerId: string, reference: string, itemReference: string) {
+  async publishPage(ownerId: string, reference: string, itemReference: string, draft?: unknown) {
     await this.requireOwnedBoard(ownerId, reference);
-    const page = await this.previewPage(reference, itemReference);
+    const page = draft === undefined
+      ? await this.previewPage(reference, itemReference)
+      : this.validateDraft(itemReference, draft);
     return this.save(reference, itemReference, page.title, page.layout, page.snapshot);
+  }
+
+  private validateDraft(itemReference: string, draft: unknown) {
+    if (!draft || typeof draft !== 'object') throw new BadRequestException('Invalid page snapshot');
+    const { page, changes } = draft as { page?: unknown; changes?: unknown };
+    if (!Array.isArray(changes)) throw new BadRequestException('Invalid page snapshot');
+
+    const items = parseBoardChanges([{ kind: 'sheets', id: itemReference, item: page }, ...changes]);
+    if (!items || !items[0].item || items.slice(1).some((change) => change.kind === 'sheets' || !change.item)) {
+      throw new BadRequestException('Invalid page snapshot');
+    }
+    return captureBoardPage({ revision: 0, changes: items }, itemReference);
   }
 
   private async requireOwnedBoard(ownerId: string, reference: string) {

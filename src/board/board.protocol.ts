@@ -46,7 +46,7 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
     return text(item.title, 80) &&
       Number.isInteger(item.width) && number(item.width, 240, 4096) &&
       Number.isInteger(item.height) && number(item.height, 240, 4096) &&
-      typeof item.dots === 'boolean' && ['px', 'mm', 'cm', 'in'].includes(item.unit as string);
+      typeof item.dots === 'boolean' && (item.backgroundColor === undefined || color(item.backgroundColor)) && ['px', 'mm', 'cm', 'in'].includes(item.unit as string);
   }
   if (kind === 'clozeTests') {
     return item.type === 'cloze_test' && text(item.title, 80) && text(item.content, 100_000) &&
@@ -65,13 +65,19 @@ export function parseBoardPatch(value: unknown): BoardPatch | null {
       typeof value.sequence !== 'number' || !Number.isSafeInteger(value.sequence) || value.sequence < 1 ||
       !Array.isArray(value.changes) || !value.changes.length || value.changes.length > 128) return null;
 
+  const changes = parseBoardChanges(value.changes);
+  return changes ? { clientId: value.clientId, sequence: value.sequence, changes } : null;
+}
+
+export function parseBoardChanges(value: unknown): BoardChange[] | null {
+  if (!Array.isArray(value)) return null;
+
   const changes: BoardChange[] = [];
-  for (const change of value.changes) {
+  for (const change of value) {
     if (!isRecord(change) || !ITEM_KINDS.includes(change.kind as ItemKind) || !isBoardIdentifier(change.id)) return null;
     const kind = change.kind as ItemKind;
     if (change.item !== null && !isItem(kind, change.id, change.item)) return null;
-
     changes.push({ kind, id: change.id, item: change.item as Record<string, unknown> | null });
   }
-  return { clientId: value.clientId, sequence: value.sequence, changes };
+  return changes;
 }
