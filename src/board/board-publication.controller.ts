@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@ne
 import { AuthService } from '../auth/auth.service';
 import { BoardPublicationService } from './board-publication.service';
 
-type PublishBody = { access_token?: unknown; refresh_token?: unknown; layout?: unknown };
+type PublishBody = { access_token?: unknown; refresh_token?: unknown; layout?: unknown; snapshot?: unknown };
 
 @Controller('boards')
 export class BoardPublicationController {
@@ -32,7 +32,7 @@ export class BoardPublicationController {
     @Body() body?: PublishBody,
   ) {
     const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
-    return this.publications.publishPage(user.id, reference, itemReference);
+    return this.publications.publishPage(user.id, reference, itemReference, body?.snapshot);
   }
 
   @Get(':reference/published')

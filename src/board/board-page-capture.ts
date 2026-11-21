@@ -9,7 +9,7 @@ export function captureBoardPage(board: BoardUpdate, itemReference: string): Pag
   const page = board.changes.find((change) => change.kind === 'sheets' && change.id === itemReference)?.item;
   if (!page) throw new NotFoundException('Page item not found');
 
-  const { x, y, width, height, dots, title } = page as Point & SheetLayout & { title: string };
+  const { x, y, width, height, dots, title, backgroundColor } = page as Point & SheetLayout & { title: string };
   const inside = (point: Point) =>
     point.x >= x && point.y >= y && point.x <= x + width && point.y <= y + height;
   const translate = (point: Point) => ({ x: point.x - x, y: point.y - y });
@@ -42,5 +42,5 @@ export function captureBoardPage(board: BoardUpdate, itemReference: string): Pag
     if (included.has(sourceId as string) && included.has(targetId as string)) changes.push(change);
   }
 
-  return { title: title.trim() || 'Untitled page', layout: { width, height, dots }, snapshot: { revision: board.revision, changes } };
+  return { title: title.trim() || 'Untitled page', layout: { width, height, dots, backgroundColor }, snapshot: { revision: board.revision, changes } };
 }
