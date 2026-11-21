@@ -37,12 +37,15 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
   }
 
   if (kind === 'lines') {
-    return point(item.from) && point(item.to) && color(item.color) && number(item.size, 1, 256);
+    return point(item.from) && point(item.to) && color(item.color) && number(item.size, 1, 256) &&
+      (item.strokeId === undefined || isBoardIdentifier(item.strokeId));
   }
 
   if (!coordinate(item.x) || !coordinate(item.y)) return false;
   if (kind === 'clozeTests') {
-    return item.type === 'cloze_test' && text(item.title, 80) && text(item.content, 100_000);
+    return item.type === 'cloze_test' && text(item.title, 80) && text(item.content, 100_000) &&
+      (item.width === undefined || length(item.width)) &&
+      (item.height === undefined || length(item.height));
   }
 
   if (!length(item.width) || !length(item.height)) return false;
