@@ -81,6 +81,15 @@ export class AuthService {
         return this.signAccessToken(email, expiresAt, key);
     }
 
+    async requireSessionUser(accessToken: unknown, refreshToken: unknown) {
+        const token = await this.getSessionAccessToken(accessToken, refreshToken);
+        const email = this.jwtService.decode<{ email?: unknown }>(token)?.email;
+        const user = typeof email === 'string' ? await this.userService.findByEmail(email) : null;
+
+        if (!user?.isActive) throw new UnauthorizedException('Session expired');
+        return user;
+    }
+
     async revokeSession(token: unknown) {
         if (this.isRefreshToken(token)) {
             await this.redis.del(this.sessionKey(token));

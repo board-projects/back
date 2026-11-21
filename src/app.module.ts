@@ -3,8 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BoardRoomService } from './board/board-room.service';
-import { AppGateway } from './board/board.gateway';
+import { BoardModule } from './board/board.module';
 import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { RedisModule } from '@nestjs-modules/ioredis';
@@ -37,14 +36,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
           entities: [__dirname + '/**/*.entity{.ts,.js}'],
           migrations: [__dirname + '/migrations/*{.ts,.js}'],
           autoLoadEntities: configService.get<boolean>('DATABASE_MIGRATIONS_RUN'),
-          synchronize: configService.get<boolean>('DATABASE_SYNCHRONIZE'),
+          synchronize: configService.get<string>('DATABASE_SYNCHRONIZE') === 'true',
         }),
     }),
     UserModule,
     MailModule,
     AuthModule,
+    BoardModule,
   ],
   controllers: [AppController],
-  providers: [AppService, AppGateway, BoardRoomService],
+  providers: [AppService],
 })
 export class AppModule {}
