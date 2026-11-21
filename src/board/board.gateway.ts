@@ -1,60 +1,49 @@
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayConnection,
   SubscribeMessage,
   WebSocketGateway,
 } from '@nestjs/websockets';
 import type { Socket } from 'socket.io';
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface DrawLine {
-  from: Point;
-  to: Point;
-  color: string;
-  size: number;
-}
-
-function boardRoom(client: Socket): string | null {
-  const reference: unknown = client.handshake.auth.reference;
-  if (typeof reference !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(reference)) {
-    return null;
-  }
-
-  return `board:${reference}`;
-}
+import { BoardRoomService } from './board-room.service';
+import { isBoardIdentifier, parseBoardPatch } from './board.protocol';
 
 @WebSocketGateway({
   namespace: '/board',
-  cors: {
-    origin: '*',
-  },
+  cors: { origin: '*' },
 })
-export class AppGateway implements OnGatewayConnection<Socket> {
-  async handleConnection(client: Socket) {
-    const room = boardRoom(client);
-    if (!room) {
-      client.disconnect();
-      return;
-    }
+export class AppGateway {
+  constructor(private readonly boards: BoardRoomService) {}
+
+  @SubscribeMessage('board:join')
+  async join(@ConnectedSocket() client: Socket) {
+    const reference: unknown = client.handshake.auth.reference;
+    if (!isBoardIdentifier(reference)) return { ok: false };
+    const room = `board:${reference}`;
 
     try {
       await client.join(room);
-      if (client.connected) client.emit('board-ready');
+      return { ok: true, ...await this.boards.snapshot(reference) };
     } catch {
-      client.disconnect();
+      await client.leave(room);
+      return { ok: false };
     }
   }
 
-  @SubscribeMessage('draw-line')
-  handleDrawLine(@ConnectedSocket() client: Socket, @MessageBody() data: DrawLine) {
-    const room = boardRoom(client);
-    if (!room || !client.rooms.has(room)) return;
+  @SubscribeMessage('board:patch')
+  async patch(@ConnectedSocket() client: Socket, @MessageBody() payload: unknown) {
+    const reference: unknown = client.handshake.auth.reference;
+    if (!isBoardIdentifier(reference)) return { ok: false };
+    const room = `board:${reference}`;
+    const patch = parseBoardPatch(payload);
+    if (!client.rooms.has(room) || !patch) return { ok: false };
 
-    client.to(room).emit('draw-line', data);
+    try {
+      const { revision, applied } = await this.boards.apply(reference, patch);
+      if (applied) client.to(room).emit('board:update', { revision, changes: patch.changes });
+      return { ok: true, revision, applied };
+    } catch {
+      return { ok: false };
+    }
   }
 }
