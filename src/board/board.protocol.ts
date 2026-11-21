@@ -1,4 +1,4 @@
-const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets'] as const;
+const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets', 'tables'] as const;
 type ItemKind = typeof ITEM_KINDS[number];
 
 export type BoardChange = { kind: ItemKind; id: string; item: Record<string, unknown> | null };
@@ -21,6 +21,14 @@ const color = (value: unknown) => typeof value === 'string' && /^#[0-9a-f]{6}$/i
 const port = (value: unknown) => ['top', 'right', 'bottom', 'left'].includes(value as string);
 const point = (value: unknown) => isRecord(value) && coordinate(value.x) && coordinate(value.y);
 
+// Keep these wire limits aligned with the table editor.
+function tableTracks(value: unknown, total: unknown): boolean {
+  return Array.isArray(value) && value.length >= 1 && value.length <= 30 &&
+    number(total, 24, 4000) &&
+    value.every((size) => Number.isInteger(size) && number(size, 24, 4000)) &&
+    value.reduce((sum: number, size: number) => sum + size, 0) === total;
+}
+
 function isItem(kind: ItemKind, id: string, item: unknown) {
   if (!isRecord(item) || item.id !== id) return false;
 
@@ -42,6 +50,9 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
   }
 
   if (!coordinate(item.x) || !coordinate(item.y)) return false;
+  if (kind === 'tables') {
+    return tableTracks(item.rows, item.height) && tableTracks(item.columns, item.width);
+  }
   if (kind === 'sheets') {
     return text(item.title, 80) &&
       Number.isInteger(item.width) && number(item.width, 240, 4096) &&
