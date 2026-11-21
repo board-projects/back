@@ -22,8 +22,15 @@ export class BoardDirectoryController {
   @Post(':reference/title')
   @HttpCode(200)
   async title(@Param('reference', ParseUUIDPipe) reference: string, @Body() credentials?: SessionBody) {
-    await this.auth.requireSessionUser(credentials?.access_token, credentials?.refresh_token);
-    return this.boards.title(reference);
+    const user = await this.auth.requireSessionUser(credentials?.access_token, credentials?.refresh_token);
+    return this.boards.title(reference, user.id);
+  }
+
+  @Post(':reference/rename')
+  @HttpCode(200)
+  async rename(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: SessionBody & { title?: unknown }) {
+    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.boards.rename(reference, user.id, body?.title);
   }
 
   @Post('validate-import')

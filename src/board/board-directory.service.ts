@@ -1,8 +1,16 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { Board } from './entities/board.entity';
+
+function parseBoardTitle(title: unknown) {
+  const name = typeof title === 'string' ? title.trim() : '';
+  if (!name || name.length > 80) {
+    throw new BadRequestException('Enter a board name between 1 and 80 characters');
+  }
+  return name;
+}
 
 @Injectable()
 export class BoardDirectoryService {
@@ -16,16 +24,20 @@ export class BoardDirectoryService {
     });
   }
 
-  async title(reference: string) {
-    const board = await this.boards.findOne({ where: { reference }, select: { title: true } });
-    return { title: board?.title ?? 'Untitled board' };
+  async title(reference: string, userId: string) {
+    const board = await this.boards.findOne({ where: { reference }, select: { title: true, ownerId: true } });
+    return { title: board?.title ?? 'Untitled board', canRename: board?.ownerId === userId };
+  }
+
+  async rename(reference: string, ownerId: string, title: unknown) {
+    const name = parseBoardTitle(title);
+    const result = await this.boards.update({ reference, ownerId }, { title: name });
+    if (!result.affected) throw new NotFoundException('You cannot rename this board');
+    return { title: name, canRename: true };
   }
 
   async create(ownerId: string, title: unknown) {
-    const name = typeof title === 'string' ? title.trim() : '';
-    if (!name || name.length > 80) {
-      throw new BadRequestException('Enter a board name between 1 and 80 characters');
-    }
+    const name = parseBoardTitle(title);
 
     const board = await this.boards.save(this.boards.create({
       reference: randomUUID(),
