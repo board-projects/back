@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import type Redis from 'ioredis';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
@@ -7,6 +9,9 @@ import { captureBoardPage } from './board-page-capture';
 import { BoardRoomService } from './board-room.service';
 import { Board } from './entities/board.entity';
 import { PublishedBoard, type SheetLayout } from './entities/published-board.entity';
+
+const publicPageKey = (reference: string) => `test:publication:v1:${reference}`;
+type PublishedPage = { title: string; layout: SheetLayout; snapshot: BoardUpdate };
 
 const LEGACY_PAGE = '00000000-0000-0000-0000-000000000000';
 
@@ -37,6 +42,7 @@ export class BoardPublicationService {
     @InjectRepository(Board) private readonly boards: Repository<Board>,
     @InjectRepository(PublishedBoard) private readonly publications: Repository<PublishedBoard>,
     private readonly rooms: BoardRoomService,
+    @InjectRedis() private readonly redis: Redis,
   ) {}
 
   async publish(ownerId: string, reference: string, draftLayout: unknown) {
@@ -57,6 +63,20 @@ export class BoardPublicationService {
       ? await this.previewPage(reference, itemReference)
       : this.validateDraft(itemReference, draft);
     return this.save(reference, itemReference, page.title, page.layout, page.snapshot);
+  }
+
+  async publishPublicPage(draft: unknown) {
+    if (!draft || typeof draft !== 'object') throw new BadRequestException('Invalid page snapshot');
+    const { page } = draft as { page?: { id?: unknown } };
+    if (typeof page?.id !== 'string') throw new BadRequestException('Invalid page snapshot');
+
+    const captured = this.validateDraft(page.id, draft);
+    const published: PublishedPage = { ...captured, snapshot: publicSnapshot(captured.snapshot) };
+    const reference = randomUUID();
+    if (await this.redis.set(publicPageKey(reference), JSON.stringify(published), 'NX') !== 'OK') {
+      throw new ServiceUnavailableException('Could not create a public page. Please retry.');
+    }
+    return { reference };
   }
 
   private validateDraft(itemReference: string, draft: unknown) {
@@ -98,6 +118,9 @@ export class BoardPublicationService {
   }
 
   async read(reference: string) {
+    const publicPage = await this.redis.get(publicPageKey(reference));
+    if (publicPage) return JSON.parse(publicPage) as PublishedPage;
+
     const published = await this.publications.findOneBy({ publicReference: reference });
     if (!published) throw new NotFoundException('Published page not found');
 
