@@ -11,7 +11,7 @@ async function bootstrap() {
     process.env.ORIGIN_PROD_WWW,
     process.env.ORIGIN_STAGE,
     process.env.ORIGIN_DEV,
-  ].filter(Boolean);
+  ].filter((origin): origin is string => !!origin);
 
   app.enableCors({
     origin: allowedOrigins,
