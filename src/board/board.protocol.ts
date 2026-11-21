@@ -1,4 +1,4 @@
-const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines'] as const;
+const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets'] as const;
 type ItemKind = typeof ITEM_KINDS[number];
 
 export type BoardChange = { kind: ItemKind; id: string; item: Record<string, unknown> | null };
@@ -42,6 +42,12 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
   }
 
   if (!coordinate(item.x) || !coordinate(item.y)) return false;
+  if (kind === 'sheets') {
+    return text(item.title, 80) &&
+      Number.isInteger(item.width) && number(item.width, 240, 4096) &&
+      Number.isInteger(item.height) && number(item.height, 240, 4096) &&
+      typeof item.dots === 'boolean' && ['px', 'mm', 'cm', 'in'].includes(item.unit as string);
+  }
   if (kind === 'clozeTests') {
     return item.type === 'cloze_test' && text(item.title, 80) && text(item.content, 100_000) &&
       (item.width === undefined || length(item.width)) &&

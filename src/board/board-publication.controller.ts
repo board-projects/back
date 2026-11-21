@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { BoardPublicationService } from './board-publication.service';
 
@@ -12,6 +12,27 @@ export class BoardPublicationController {
   async publish(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: PublishBody) {
     const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
     return this.publications.publish(user.id, reference, body?.layout);
+  }
+
+  @Post(':reference/pages/:itemReference/preview')
+  @HttpCode(200)
+  async previewPage(
+    @Param('reference', ParseUUIDPipe) reference: string,
+    @Param('itemReference', ParseUUIDPipe) itemReference: string,
+    @Body() body?: PublishBody,
+  ) {
+    await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.publications.previewPage(reference, itemReference);
+  }
+
+  @Post(':reference/pages/:itemReference/publish')
+  async publishPage(
+    @Param('reference', ParseUUIDPipe) reference: string,
+    @Param('itemReference', ParseUUIDPipe) itemReference: string,
+    @Body() body?: PublishBody,
+  ) {
+    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.publications.publishPage(user.id, reference, itemReference);
   }
 
   @Get(':reference/published')
