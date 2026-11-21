@@ -16,6 +16,11 @@ export class BoardDirectoryService {
     });
   }
 
+  async title(reference: string) {
+    const board = await this.boards.findOne({ where: { reference }, select: { title: true } });
+    return { title: board?.title ?? 'Untitled board' };
+  }
+
   async create(ownerId: string, title: unknown) {
     const name = typeof title === 'string' ? title.trim() : '';
     if (!name || name.length > 80) {

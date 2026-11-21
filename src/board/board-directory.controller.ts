@@ -1,5 +1,6 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
+import { parseBoardChanges } from './board.protocol';
 import { BoardDirectoryService } from './board-directory.service';
 
 type SessionBody = { access_token?: unknown; refresh_token?: unknown };
@@ -16,6 +17,23 @@ export class BoardDirectoryController {
   async list(@Body() credentials?: SessionBody) {
     const owner = await this.auth.requireSessionUser(credentials?.access_token, credentials?.refresh_token);
     return this.boards.list(owner.id);
+  }
+
+  @Post(':reference/title')
+  @HttpCode(200)
+  async title(@Param('reference', ParseUUIDPipe) reference: string, @Body() credentials?: SessionBody) {
+    await this.auth.requireSessionUser(credentials?.access_token, credentials?.refresh_token);
+    return this.boards.title(reference);
+  }
+
+  @Post('validate-import')
+  @HttpCode(200)
+  validateImport(@Body('changes') value: unknown) {
+    const changes = parseBoardChanges(value);
+    if (!changes || changes.some((change) => change.item === null)) {
+      throw new BadRequestException('Invalid board items in this JSON file');
+    }
+    return { valid: true };
   }
 
   @Post()
