@@ -29,7 +29,11 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
       item.sourceId !== item.targetId && port(item.sourcePort) && port(item.targetPort) &&
       (item.color === undefined || color(item.color)) &&
       (item.size === undefined || number(item.size, 1, 48)) &&
-      (item.dashed === undefined || typeof item.dashed === 'boolean');
+      (item.dashed === undefined || typeof item.dashed === 'boolean') &&
+      (item.pattern === undefined || ['solid', 'dash', 'dot', 'dash-dot'].includes(item.pattern as string)) &&
+      (item.route === undefined || ['straight', 'smooth', 'orthogonal', 'wave', 'zigzag'].includes(item.route as string)) &&
+      (item.label === undefined || text(item.label, 80)) &&
+      (item.arrow === undefined || typeof item.arrow === 'boolean');
   }
 
   if (kind === 'lines') {
