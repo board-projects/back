@@ -35,6 +35,11 @@ export class BoardPublicationController {
     return this.publications.publishPage(user.id, reference, itemReference, body?.snapshot);
   }
 
+  @Post('publications')
+  publishPublicPage(@Body() draft: unknown) {
+    return this.publications.publishPublicPage(draft);
+  }
+
   @Get(':reference/published')
   read(@Param('reference', ParseUUIDPipe) reference: string) {
     return this.publications.read(reference);
