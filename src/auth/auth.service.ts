@@ -1,5 +1,5 @@
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
@@ -86,7 +86,8 @@ export class AuthService {
         const email = this.jwtService.decode<{ email?: unknown }>(token)?.email;
         const user = typeof email === 'string' ? await this.userService.findByEmail(email) : null;
 
-        if (!user?.isActive) throw new UnauthorizedException('Session expired');
+        if (!user) throw new UnauthorizedException('Sign in again to restore your account session');
+        if (!user.isActive) throw new ForbiddenException('This account is inactive');
         return user;
     }
 
