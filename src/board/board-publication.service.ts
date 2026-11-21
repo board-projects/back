@@ -81,7 +81,16 @@ export class BoardPublicationService {
     const saved = await this.publications.createQueryBuilder()
       .insert()
       .into(PublishedBoard)
-      .values({ reference, itemReference, publicReference: randomUUID(), title, layout, snapshot: publicSnapshot(snapshot), publishedAt: new Date() })
+      .values({
+        reference,
+        itemReference,
+        publicReference: randomUUID(),
+        title,
+        layout,
+        snapshot: () => 'CAST(:pageSnapshot AS jsonb)',
+        publishedAt: new Date(),
+      })
+      .setParameter('pageSnapshot', JSON.stringify(publicSnapshot(snapshot)))
       .orUpdate(['title', 'layout', 'snapshot', 'published_at'], ['reference', 'item_reference'])
       .returning('"public_reference"')
       .execute();
