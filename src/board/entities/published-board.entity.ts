@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn, Unique, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, Unique, UpdateDateColumn } from 'typeorm';
 import type { BoardUpdate } from '../board.protocol';
 import { Board } from './board.entity';
 
@@ -10,10 +10,13 @@ export class PublishedBoard {
   @PrimaryColumn('uuid')
   reference: string;
 
+  @PrimaryColumn({ name: 'item_reference', type: 'uuid' })
+  itemReference: string;
+
   @Column({ name: 'public_reference', type: 'uuid' })
   publicReference: string;
 
-  @OneToOne(() => Board, { nullable: false, onDelete: 'CASCADE' })
+  @ManyToOne(() => Board, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'reference', foreignKeyConstraintName: 'FK_published_boards_board' })
   board: Board;
 
