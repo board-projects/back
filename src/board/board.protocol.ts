@@ -106,7 +106,7 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
 
   if (!length(item.width) || !length(item.height)) return false;
   return kind === 'shapes'
-    ? ['rect', 'circle', 'star'].includes(item.type as string) && color(item.color) &&
+    ? ['rect', 'circle', 'star', 'trapezoid', 'triangle', 'diamond'].includes(item.type as string) && color(item.color) &&
       (item.label === undefined || typeof item.label === 'string') &&
       textRuns(item.textRuns, typeof item.label === 'string' ? item.label.length : 0)
     : text(item.code, 100_000);
