@@ -29,6 +29,14 @@ function tableTracks(value: unknown, total: unknown): boolean {
     value.reduce((sum: number, size: number) => sum + size, 0) === total;
 }
 
+function tableCellText(value: unknown, rows: number, columns: number): boolean {
+  return value === undefined || (isRecord(value) && Object.entries(value).every(([key, content]) => {
+    if (!/^(0|[1-9][0-9]?):(0|[1-9][0-9]?)$/.test(key)) return false;
+    const [row, column] = key.split(':').map(Number);
+    return row < rows && column < columns && text(content, 120);
+  }));
+}
+
 function isItem(kind: ItemKind, id: string, item: unknown) {
   if (!isRecord(item) || item.id !== id) return false;
 
@@ -46,12 +54,15 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
 
   if (kind === 'lines') {
     return point(item.from) && point(item.to) && color(item.color) && number(item.size, 1, 256) &&
-      (item.strokeId === undefined || isBoardIdentifier(item.strokeId));
+      (item.strokeId === undefined || isBoardIdentifier(item.strokeId)) &&
+      (item.label === undefined || text(item.label, 80));
   }
 
   if (!coordinate(item.x) || !coordinate(item.y)) return false;
   if (kind === 'tables') {
-    return tableTracks(item.rows, item.height) && tableTracks(item.columns, item.width);
+    return Array.isArray(item.rows) && Array.isArray(item.columns) &&
+      tableTracks(item.rows, item.height) && tableTracks(item.columns, item.width) &&
+      tableCellText(item.cells, item.rows.length, item.columns.length);
   }
   if (kind === 'sheets') {
     return text(item.title, 80) &&
@@ -67,7 +78,7 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
 
   if (!length(item.width) || !length(item.height)) return false;
   return kind === 'shapes'
-    ? ['rect', 'circle', 'star'].includes(item.type as string) && color(item.color)
+    ? ['rect', 'circle', 'star'].includes(item.type as string) && color(item.color) && (item.label === undefined || text(item.label, 80))
     : text(item.code, 100_000);
 }
 
