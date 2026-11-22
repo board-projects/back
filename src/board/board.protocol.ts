@@ -37,6 +37,34 @@ function tableCellText(value: unknown, rows: number, columns: number): boolean {
   }));
 }
 
+function textRunFormat(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return ['bold', 'italic', 'underline'].every((key) => value[key] === undefined || typeof value[key] === 'boolean') &&
+    (value.align === undefined || ['left', 'center', 'right'].includes(value.align as string)) &&
+    (value.font === undefined || ['Arial', 'Georgia', 'Verdana', 'Courier New'].includes(value.font as string)) &&
+    (value.size === undefined || [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64].includes(value.size as number)) &&
+    (value.link === undefined || text(value.link, 2048));
+}
+
+function textRuns(value: unknown, length: number): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+
+  let end = 0;
+  for (const run of value) {
+    if (!isRecord(run) || typeof run.start !== 'number' || typeof run.end !== 'number' ||
+        !Number.isInteger(run.start) || !Number.isInteger(run.end) ||
+        run.start < end || run.end <= run.start || run.end > length || !textRunFormat(run.format)) return false;
+    end = run.end;
+  }
+  return true;
+}
+
+function tableCellRuns(value: unknown, cells: unknown): boolean {
+  return value === undefined || (isRecord(value) && isRecord(cells) && Object.entries(value).every(([key, runs]) =>
+    Object.hasOwn(cells, key) && typeof cells[key] === 'string' && textRuns(runs, cells[key].length)));
+}
+
 function isItem(kind: ItemKind, id: string, item: unknown) {
   if (!isRecord(item) || item.id !== id) return false;
 
@@ -62,7 +90,7 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
   if (kind === 'tables') {
     return Array.isArray(item.rows) && Array.isArray(item.columns) &&
       tableTracks(item.rows, item.height) && tableTracks(item.columns, item.width) &&
-      tableCellText(item.cells, item.rows.length, item.columns.length);
+      tableCellText(item.cells, item.rows.length, item.columns.length) && tableCellRuns(item.cellRuns, item.cells);
   }
   if (kind === 'sheets') {
     return text(item.title, 80) &&
@@ -78,7 +106,9 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
 
   if (!length(item.width) || !length(item.height)) return false;
   return kind === 'shapes'
-    ? ['rect', 'circle', 'star'].includes(item.type as string) && color(item.color) && (item.label === undefined || text(item.label, 80))
+    ? ['rect', 'circle', 'star'].includes(item.type as string) && color(item.color) &&
+      (item.label === undefined || typeof item.label === 'string') &&
+      textRuns(item.textRuns, typeof item.label === 'string' ? item.label.length : 0)
     : text(item.code, 100_000);
 }
 
