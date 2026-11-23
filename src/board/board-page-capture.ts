@@ -1,5 +1,5 @@
-import { NotFoundException } from '@nestjs/common';
-import type { BoardChange, BoardUpdate } from './board.protocol';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { parseBoardChanges, type BoardChange, type BoardUpdate } from './board.protocol';
 import type { SheetLayout } from './entities/published-board.entity';
 
 type PageSnapshot = { title: string; layout: SheetLayout; snapshot: BoardUpdate };
@@ -42,5 +42,17 @@ export function captureBoardPage(board: BoardUpdate, itemReference: string): Pag
     if (included.has(sourceId as string) && included.has(targetId as string)) changes.push(change);
   }
 
-  return { title: title.trim() || 'Untitled page', layout: { width, height, dots, backgroundColor }, snapshot: { revision: board.revision, changes } };
+  return { title: title.trim() || 'Untitled page', layout: { width, height, dots, ...(backgroundColor === undefined ? {} : { backgroundColor }) }, snapshot: { revision: board.revision, changes } };
+}
+
+export function capturePageDraft(itemReference: string, draft: unknown) {
+  if (!draft || typeof draft !== 'object') throw new BadRequestException('Invalid page snapshot');
+  const { page, changes } = draft as { page?: unknown; changes?: unknown };
+  if (!Array.isArray(changes)) throw new BadRequestException('Invalid page snapshot');
+
+  const items = parseBoardChanges([{ kind: 'sheets', id: itemReference, item: page }, ...changes]);
+  if (!items || !items[0].item || items.slice(1).some((change) => change.kind === 'sheets' || !change.item)) {
+    throw new BadRequestException('Invalid page snapshot');
+  }
+  return captureBoardPage({ revision: 0, changes: items }, itemReference);
 }
