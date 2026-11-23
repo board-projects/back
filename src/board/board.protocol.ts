@@ -1,4 +1,4 @@
-const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets', 'tables'] as const;
+const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets', 'tables', 'questions'] as const;
 type ItemKind = typeof ITEM_KINDS[number];
 
 export type BoardChange = { kind: ItemKind; id: string; item: Record<string, unknown> | null };
@@ -65,6 +65,19 @@ function tableCellRuns(value: unknown, cells: unknown): boolean {
     Object.hasOwn(cells, key) && typeof cells[key] === 'string' && textRuns(runs, cells[key].length)));
 }
 
+function isQuestion(item: Record<string, unknown>): boolean {
+  if (!text(item.label, 80) || typeof item.prompt !== 'string' || !Array.isArray(item.options) ||
+      item.options.length < 2 || !number(item.width, 200, 4000) || !number(item.height, 160, 4000)) return false;
+
+  const ids = new Set<string>();
+  for (const option of item.options) {
+    if (!isRecord(option) || !isBoardIdentifier(option.id) || ids.has(option.id) ||
+        typeof option.text !== 'string' || typeof option.correct !== 'boolean') return false;
+    ids.add(option.id);
+  }
+  return true;
+}
+
 function isItem(kind: ItemKind, id: string, item: unknown) {
   if (!isRecord(item) || item.id !== id) return false;
 
@@ -87,6 +100,7 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
   }
 
   if (!coordinate(item.x) || !coordinate(item.y)) return false;
+  if (kind === 'questions') return isQuestion(item);
   if (kind === 'tables') {
     return Array.isArray(item.rows) && Array.isArray(item.columns) &&
       tableTracks(item.rows, item.height) && tableTracks(item.columns, item.width) &&
