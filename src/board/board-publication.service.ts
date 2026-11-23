@@ -4,8 +4,9 @@ import type Redis from 'ioredis';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { Repository } from 'typeorm';
-import { parseBoardChanges, type BoardUpdate } from './board.protocol';
-import { captureBoardPage } from './board-page-capture';
+import type { BoardUpdate } from './board.protocol';
+import { publicSnapshot } from './public-board-snapshot';
+import { captureBoardPage, capturePageDraft } from './board-page-capture';
 import { BoardRoomService } from './board-room.service';
 import { Board } from './entities/board.entity';
 import { PublishedBoard, type SheetLayout } from './entities/published-board.entity';
@@ -23,23 +24,6 @@ function parseLayout(value: unknown): SheetLayout {
     throw new BadRequestException('Page dimensions must be between 240 and 4096 pixels');
   }
   return { width, height, dots };
-}
-
-function publicSnapshot(snapshot: BoardUpdate): BoardUpdate {
-  return {
-    ...snapshot,
-    changes: snapshot.changes.map((change) => {
-      if (change.kind === 'questions' && Array.isArray(change.item?.options)) {
-        const options = change.item.options as Array<{ id: string; text: string; correct?: boolean }>;
-        const multiple = options.some((option) => option.correct !== undefined)
-          ? options.filter((option) => option.correct).length > 1 : change.item.multiple === true;
-        return { ...change, item: { ...change.item, multiple, options: options.map(({ id, text }) => ({ id, text })) } };
-      }
-      if (change.kind !== 'clozeTests' || typeof change.item?.content !== 'string') return change;
-      const content = change.item.content.replace(/\[[^\]]*\]|\{\{[^}]*\}\}/g, '[ ]');
-      return { ...change, item: { ...change.item, content } };
-    }),
-  };
 }
 
 @Injectable()
@@ -67,7 +51,7 @@ export class BoardPublicationService {
     await this.requireOwnedBoard(ownerId, reference);
     const page = draft === undefined
       ? await this.previewPage(reference, itemReference)
-      : this.validateDraft(itemReference, draft);
+      : capturePageDraft(itemReference, draft);
     return this.save(reference, itemReference, page.title, page.layout, page.snapshot);
   }
 
@@ -76,25 +60,13 @@ export class BoardPublicationService {
     const { page } = draft as { page?: { id?: unknown } };
     if (typeof page?.id !== 'string') throw new BadRequestException('Invalid page snapshot');
 
-    const captured = this.validateDraft(page.id, draft);
+    const captured = capturePageDraft(page.id, draft);
     const published: PublishedPage = { ...captured, snapshot: publicSnapshot(captured.snapshot) };
     const reference = randomUUID();
     if (await this.redis.set(publicPageKey(reference), JSON.stringify(published), 'NX') !== 'OK') {
       throw new ServiceUnavailableException('Could not create a public page. Please retry.');
     }
     return { reference };
-  }
-
-  private validateDraft(itemReference: string, draft: unknown) {
-    if (!draft || typeof draft !== 'object') throw new BadRequestException('Invalid page snapshot');
-    const { page, changes } = draft as { page?: unknown; changes?: unknown };
-    if (!Array.isArray(changes)) throw new BadRequestException('Invalid page snapshot');
-
-    const items = parseBoardChanges([{ kind: 'sheets', id: itemReference, item: page }, ...changes]);
-    if (!items || !items[0].item || items.slice(1).some((change) => change.kind === 'sheets' || !change.item)) {
-      throw new BadRequestException('Invalid page snapshot');
-    }
-    return captureBoardPage({ revision: 0, changes: items }, itemReference);
   }
 
   private async requireOwnedBoard(ownerId: string, reference: string) {

@@ -11,8 +11,17 @@ export class ExamAssignment {
   @Column({ name: 'test_id', type: 'uuid' })
   testId: string;
 
+  @Column({ name: 'created_by', type: 'uuid', nullable: true })
+  createdBy: string | null;
+
+  @Column({ name: 'updated_by', type: 'uuid', nullable: true })
+  updatedBy: string | null;
+
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
 
   @Column({ name: 'is_active', type: 'boolean' })
   isActive: boolean;
