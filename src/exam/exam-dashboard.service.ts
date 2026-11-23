@@ -1,28 +1,23 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AccountRolesService, type AccountRole } from '../user/account-roles.service';
 import { ExamAttempt } from './entities/exam-attempt.entity';
 import { ExamAssignment } from './entities/exam-assignment.entity';
 import { Exam } from './entities/exam.entity';
+
+const dashboardModes = ['teacher', 'student'] as const;
+type DashboardMode = (typeof dashboardModes)[number];
 
 @Injectable()
 export class ExamDashboardService {
   constructor(
     @InjectRepository(Exam) private readonly exams: Repository<Exam>,
     @InjectRepository(ExamAssignment) private readonly assignments: Repository<ExamAssignment>,
-    private readonly accountRoles: AccountRolesService,
   ) {}
 
-  async overview(userId: string, requestedRole?: AccountRole) {
-    const roles = await this.accountRoles.list(userId);
-    const role = requestedRole ?? (roles.includes('teacher') ? 'teacher' : roles[0]);
-    if (!role || !roles.includes(role)) {
-      throw new ForbiddenException('Sign in with an account registered for this dashboard');
-    }
-
+  async overview(userId: string, role: DashboardMode = 'teacher') {
     const tests = role === 'teacher' ? await this.ownedExams(userId) : await this.assignedExams(userId);
-    return { role, roles, tests };
+    return { role, roles: dashboardModes, tests };
   }
 
   private ownedExams(teacherId: string) {
