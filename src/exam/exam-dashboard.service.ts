@@ -1,11 +1,15 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AccountRolesService, type AccountRole } from '../user/account-roles.service';
+import { ExamAssignment } from './entities/exam-assignment.entity';
+import { Exam } from './entities/exam.entity';
 
 @Injectable()
 export class ExamDashboardService {
   constructor(
-    private readonly dataSource: DataSource,
+    @InjectRepository(Exam) private readonly exams: Repository<Exam>,
+    @InjectRepository(ExamAssignment) private readonly assignments: Repository<ExamAssignment>,
     private readonly accountRoles: AccountRolesService,
   ) {}
 
@@ -15,20 +19,30 @@ export class ExamDashboardService {
     if (!role || !roles.includes(role)) {
       throw new ForbiddenException('Sign in with an account registered for this dashboard');
     }
-    const tests = role === 'teacher'
-      ? await this.dataSource.query(
-        `SELECT "id", "label", "status" FROM "tests"
-         WHERE "teacher_id" = $1 AND "is_active" ORDER BY "created_at" DESC, "id"`, [userId],
-      )
-      : await this.dataSource.query(
-        `SELECT a."id", t."label", CASE WHEN ta."submitted_at" IS NOT NULL THEN 'submitted'
-            WHEN ta."id" IS NOT NULL THEN 'in_progress' ELSE 'assigned' END AS "status"
-         FROM "test_assignments" a
-         JOIN "tests" t ON t."id" = a."test_id"
-         LEFT JOIN "test_attempts" ta ON ta."assignment_id" = a."id" AND ta."is_active"
-         WHERE a."student_id" = $1 AND a."is_active" AND t."is_active" AND t."status" = 'published'
-         ORDER BY a."created_at" DESC, a."id"`, [userId],
-      );
+
+    const tests = role === 'teacher' ? await this.ownedExams(userId) : await this.assignedExams(userId);
     return { role, roles, tests };
+  }
+
+  private ownedExams(teacherId: string) {
+    return this.exams.find({
+      select: { id: true, label: true, status: true },
+      where: { teacherId, isActive: true },
+      order: { createdAt: 'DESC', id: 'ASC' },
+    });
+  }
+
+  private async assignedExams(studentId: string) {
+    const assignments = await this.assignments.find({
+      select: { id: true, test: { id: true, label: true }, attempt: { id: true, isActive: true, submittedAt: true } },
+      relations: { test: true, attempt: true },
+      where: { studentId, isActive: true, test: { isActive: true, status: 'published' } },
+      order: { createdAt: 'DESC', id: 'ASC' },
+    });
+    return assignments.map(({ id, test, attempt }) => ({
+      id,
+      label: test.label,
+      status: attempt?.isActive ? (attempt.submittedAt ? 'submitted' : 'in_progress') : 'assigned',
+    }));
   }
 }
