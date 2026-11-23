@@ -7,3 +7,5 @@ Apply these rules to every code change in this project.
 - Reuse existing behavior when it fits. Avoid duplication and abstractions that make the code harder to follow.
 - Write clear names and explicit code a human developer can read easily. Do not add code comments.
 - Open a pull request and use Conventional Commits.
+
+- Define database columns in this order: `id`, domain columns, `created_by`, `updated_by`, `created_at`, `updated_at`, `is_active`.
