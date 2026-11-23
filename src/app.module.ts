@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { ExamModule } from './exam/exam.module';
 import { UserModule } from './user/user.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BoardModule } from './board/board.module';
@@ -43,6 +44,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     MailModule,
     AuthModule,
     BoardModule,
+    ExamModule,
   ],
   controllers: [AppController],
   providers: [AppService],

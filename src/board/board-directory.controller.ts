@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { AccountRolesService } from '../user/account-roles.service';
 import { AuthService } from '../auth/auth.service';
 import { parseBoardChanges } from './board.protocol';
 import { BoardDirectoryService } from './board-directory.service';
@@ -10,12 +11,14 @@ export class BoardDirectoryController {
   constructor(
     private readonly auth: AuthService,
     private readonly boards: BoardDirectoryService,
+    private readonly roles: AccountRolesService,
   ) {}
 
   @Post('list')
   @HttpCode(200)
   async list(@Body() credentials?: SessionBody) {
     const owner = await this.auth.requireSessionUser(credentials?.access_token, credentials?.refresh_token);
+    await this.roles.require(owner.id, 'teacher');
     return this.boards.list(owner.id);
   }
 
@@ -46,6 +49,7 @@ export class BoardDirectoryController {
   @Post()
   async create(@Body() body?: SessionBody & { title?: unknown }) {
     const owner = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    await this.roles.require(owner.id, 'teacher');
     return this.boards.create(owner.id, body?.title);
   }
 }
