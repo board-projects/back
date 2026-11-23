@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { UserModule } from '../user/user.module';
 import { AppGateway } from './board.gateway';
 import { BoardDirectoryController } from './board-directory.controller';
 import { BoardDirectoryService } from './board-directory.service';
@@ -11,7 +12,7 @@ import { PublishedBoard } from './entities/published-board.entity';
 import { Board } from './entities/board.entity';
 
 @Module({
-  imports: [AuthModule, TypeOrmModule.forFeature([Board, PublishedBoard])],
+  imports: [AuthModule, UserModule, TypeOrmModule.forFeature([Board, PublishedBoard])],
   controllers: [BoardDirectoryController, BoardPublicationController],
   providers: [AppGateway, BoardRoomService, BoardDirectoryService, BoardPublicationService],
 })

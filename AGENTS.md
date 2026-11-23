@@ -9,3 +9,4 @@ Apply these rules to every code change in this project.
 - Open a pull request and use Conventional Commits.
 
 - Define database columns in this order: `id`, domain columns, `created_by`, `updated_by`, `created_at`, `updated_at`, `is_active`.
+- Model database associations with explicit ID columns. Use TypeORM repositories and joins on IDs without ORM relationship decorators.
