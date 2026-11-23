@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AccountRolesService, type AccountRole } from '../user/account-roles.service';
+import { ExamAttempt } from './entities/exam-attempt.entity';
 import { ExamAssignment } from './entities/exam-assignment.entity';
 import { Exam } from './entities/exam.entity';
 
@@ -33,16 +34,22 @@ export class ExamDashboardService {
   }
 
   private async assignedExams(studentId: string) {
-    const assignments = await this.assignments.find({
-      select: { id: true, test: { id: true, label: true }, attempt: { id: true, isActive: true, submittedAt: true } },
-      relations: { test: true, attempt: true },
-      where: { studentId, isActive: true, test: { isActive: true, status: 'published' } },
-      order: { createdAt: 'DESC', id: 'ASC' },
-    });
-    return assignments.map(({ id, test, attempt }) => ({
+    const assignments = await this.assignments.createQueryBuilder('assignment')
+      .innerJoin(Exam, 'exam', 'exam.id = assignment.testId AND exam.isActive AND exam.status = :status', { status: 'published' })
+      .leftJoin(ExamAttempt, 'attempt', 'attempt.assignmentId = assignment.id AND attempt.isActive')
+      .select('assignment.id', 'id')
+      .addSelect('exam.label', 'label')
+      .addSelect('attempt.id', 'attemptId')
+      .addSelect('attempt.submittedAt', 'submittedAt')
+      .where('assignment.studentId = :studentId AND assignment.isActive', { studentId })
+      .orderBy('assignment.createdAt', 'DESC')
+      .addOrderBy('assignment.id', 'ASC')
+      .getRawMany<{ id: string; label: string; attemptId: string | null; submittedAt: Date | null }>();
+
+    return assignments.map(({ id, label, attemptId, submittedAt }) => ({
       id,
-      label: test.label,
-      status: attempt?.isActive ? (attempt.submittedAt ? 'submitted' : 'in_progress') : 'assigned',
+      label,
+      status: submittedAt ? 'submitted' : attemptId ? 'in_progress' : 'assigned',
     }));
   }
 }

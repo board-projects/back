@@ -1,15 +1,12 @@
-import { Column, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
-import type { Relation } from 'typeorm';
-import { ExamAssignment } from './exam-assignment.entity';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity({ name: 'test_attempts', synchronize: false })
 export class ExamAttempt {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @OneToOne(() => ExamAssignment)
-  @JoinColumn({ name: 'assignment_id' })
-  assignment: Relation<ExamAssignment>;
+  @Column({ name: 'assignment_id', type: 'uuid' })
+  assignmentId: string;
 
   @Column({ name: 'submitted_at', type: 'timestamptz', nullable: true })
   submittedAt: Date | null;
