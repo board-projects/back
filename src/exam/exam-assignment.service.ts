@@ -38,7 +38,7 @@ export class ExamAssignmentService {
       const accounts = await manager.getRepository(User).createQueryBuilder('account')
         .select(['account.id', 'account.email'])
         .where('LOWER(account.email) IN (:...emails)', { emails })
-        .andWhere('account.isActive = :active AND account.isVerified = :active', { active: true })
+        .andWhere('account.isActive = :active', { active: true })
         .getMany();
       const matches = new Map<string, string | null>();
       for (const account of accounts) {
