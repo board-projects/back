@@ -13,10 +13,10 @@ export class ExamAssignmentController {
   async assign(
     @Param('reference', ParseUUIDPipe) reference: string,
     @Param('pageId', ParseUUIDPipe) pageId: string,
-    @Body() body?: Session & { draft?: unknown; emails?: unknown },
+    @Body() body?: Session & { draft?: unknown; emails?: unknown; timing?: unknown },
   ) {
     const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
-    return this.assignments.assign(user.id, reference, pageId, body?.draft, body?.emails);
+    return this.assignments.assign(user.id, reference, pageId, body?.draft, body?.emails, body?.timing);
   }
 
   @Post(':assignmentId')
@@ -30,6 +30,13 @@ export class ExamAssignmentController {
   async readTest(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: Session) {
     const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
     return this.assignments.readTest(user.id, reference);
+  }
+
+  @Post('test/:reference/start')
+  @HttpCode(200)
+  async startTest(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: Session) {
+    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.assignments.startTest(user.id, reference);
   }
 
   @Post('test/:reference/submit')
