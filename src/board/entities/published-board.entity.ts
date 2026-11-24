@@ -29,6 +29,21 @@ export class PublishedBoard {
   @Column({ type: 'jsonb' })
   snapshot: BoardUpdate;
 
+  @Column({ type: 'varchar', length: 7, default: 'public' })
+  visibility: 'public' | 'private';
+
+  @Column({ type: 'varchar', length: 80, default: '' })
+  topic: string;
+
+  @Column({ type: 'varchar', length: 16, default: '' })
+  level: string;
+
+  @Column({ type: 'varchar', length: 12, default: '' })
+  locale: string;
+
+  @Column({ name: 'search_pending', type: 'boolean', default: true })
+  searchPending: boolean;
+
   @UpdateDateColumn({ name: 'published_at', type: 'timestamptz' })
   publishedAt: Date;
 }
