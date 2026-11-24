@@ -2,7 +2,9 @@ import type { BoardUpdate } from '../../board/board.protocol';
 import type { SheetLayout } from '../../board/entities/published-board.entity';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-export type ExamPageSnapshot = { layout: SheetLayout; snapshot: BoardUpdate };
+import type { ExamTiming } from '../exam-timing';
+
+export type ExamPageSnapshot = { layout: SheetLayout; snapshot: BoardUpdate; timing?: ExamTiming };
 
 @Entity({ name: 'tests', synchronize: false })
 export class Exam {

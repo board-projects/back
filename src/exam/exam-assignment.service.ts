@@ -3,13 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { isEmail } from 'class-validator';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { countClozeBlanks } from '../board/cloze-content';
 import { capturePageDraft } from '../board/board-page-capture';
 import { Board } from '../board/entities/board.entity';
 import { validStructuredAnswer } from '../board/structured-question';
 import { publicSnapshot } from '../board/public-board-snapshot';
 import { User } from '../user/entities/user.entity';
+import { examAccess, parseExamTiming, requireOpenExam } from './exam-timing';
 import { gradeExam } from './exam-grading';
 import { ExamAttempt } from './entities/exam-attempt.entity';
 import { ExamAssignment } from './entities/exam-assignment.entity';
@@ -24,14 +25,19 @@ export class ExamAssignmentService {
     @InjectRepository(Exam) private readonly exams: Repository<Exam>,
   ) {}
 
-  async assign(teacherId: string, boardReference: string, pageId: string, draft: unknown, recipients: unknown) {
+  async assign(teacherId: string, boardReference: string, pageId: string, draft: unknown, recipients: unknown, schedule?: unknown) {
     if (!Array.isArray(recipients) || !recipients.length || recipients.length > 100 ||
         recipients.some((email) => typeof email !== 'string' || !isEmail(email.trim()))) {
       throw new BadRequestException('Enter 1 to 100 valid email addresses');
     }
     const emails = [...new Set((recipients as string[]).map((email) => email.trim().toLowerCase()))];
     const page = capturePageDraft(pageId, draft);
-    const pageSnapshot: ExamPageSnapshot = { layout: page.layout, snapshot: publicSnapshot(page.snapshot) };
+    const timing = parseExamTiming(schedule);
+    const pageSnapshot: ExamPageSnapshot = {
+      layout: page.layout,
+      snapshot: publicSnapshot(page.snapshot),
+      ...(Object.keys(timing).length ? { timing } : {}),
+    };
     const questions = page.snapshot.changes.flatMap(({ kind, id, item }) =>
       item && (kind === 'questions' || kind === 'clozeTests') ? [{ sourceItemId: id, kind, question: item }] : []);
 
@@ -99,32 +105,65 @@ export class ExamAssignmentService {
     if (!assignment) throw new NotFoundException('Assigned exam not found');
     const exam = await this.exams.findOneBy({ id: assignment.testId, status: 'published', isActive: true });
     if (!exam) throw new NotFoundException('Assigned exam not found');
-    return { testId: exam.id, title: exam.label, layout: exam.pageSnapshot.layout, snapshot: publicSnapshot(exam.pageSnapshot.snapshot) };
+    return { testId: exam.id };
   }
+
   async readTest(studentId: string, testId: string) {
     const assignment = await this.assignments.findOneBy({ testId, studentId, isActive: true });
-    if (!assignment) throw new NotFoundException('Assigned exam not found');
-    const page = await this.read(studentId, assignment.id);
+    const exam = assignment && await this.exams.findOneBy({ id: testId, status: 'published', isActive: true });
+    if (!assignment || !exam) throw new NotFoundException('Assigned exam not found');
+
     const attempt = await this.dataSource.getRepository(ExamAttempt).findOneBy({ assignmentId: assignment.id, isActive: true });
-    if (!attempt?.submittedAt) return { ...page, submittedAt: null, answers: {} };
+    const { layout, timing = {}, snapshot } = exam.pageSnapshot;
+    const access = examAccess(timing, new Date(), attempt?.startedAt);
+    const page = { testId, title: exam.label, layout, access };
+    if (!attempt?.submittedAt) {
+      return { ...page, submittedAt: null, ...(access.status === 'open' ? { snapshot: publicSnapshot(snapshot) } : {}) };
+    }
     const questions = await this.dataSource.getRepository(ExamQuestion).findBy({ testId });
-    return { ...page, submittedAt: attempt.submittedAt, answers: attempt.answers, grade: gradeExam(questions, attempt.answers) };
+    return { ...page, snapshot: publicSnapshot(snapshot), submittedAt: attempt.submittedAt, answers: attempt.answers, grade: gradeExam(questions, attempt.answers) };
+  }
+
+  private async lockAssignedExam(manager: EntityManager, studentId: string, testId: string) {
+    const assignment = await manager.findOne(ExamAssignment, {
+      where: { testId, studentId, isActive: true },
+      lock: { mode: 'pessimistic_write' },
+    });
+    const exam = assignment && await manager.findOneBy(Exam, { id: testId, status: 'published', isActive: true });
+    if (!assignment || !exam) throw new NotFoundException('Assigned exam not found');
+    const attempt = await manager.findOneBy(ExamAttempt, { assignmentId: assignment.id });
+    return { assignment, exam, attempt };
+  }
+
+  async startTest(studentId: string, testId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const { assignment, exam, attempt } = await this.lockAssignedExam(manager, studentId, testId);
+      if (attempt?.isActive && attempt.submittedAt) return { startedAt: attempt.startedAt };
+
+      const now = new Date();
+      const activeAttempt = attempt?.isActive ? attempt : undefined;
+      const access = examAccess(exam.pageSnapshot.timing ?? {}, now, activeAttempt?.startedAt);
+      requireOpenExam(access, true);
+      if (activeAttempt) return { startedAt: activeAttempt.startedAt };
+      if (!access.durationMinutes) return { startedAt: null };
+
+      await manager.save(ExamAttempt, {
+        id: attempt?.id, assignmentId: assignment.id, answers: {}, startedAt: now, submittedAt: null,
+        createdBy: attempt?.createdBy ?? studentId, updatedBy: studentId, updatedAt: now, isActive: true,
+      });
+      return { startedAt: now };
+    });
   }
 
   async submitTest(studentId: string, testId: string, draft: unknown) {
+    const submittedAt = new Date();
     return this.dataSource.transaction(async (manager) => {
-      const assignment = await manager.findOne(ExamAssignment, {
-        where: { testId, studentId, isActive: true },
-        lock: { mode: 'pessimistic_write' },
-      });
-      const exam = assignment && await manager.findOneBy(Exam, { id: testId, status: 'published', isActive: true });
-      if (!assignment || !exam) throw new NotFoundException('Assigned exam not found');
-
-      const existing = await manager.findOneBy(ExamAttempt, { assignmentId: assignment.id });
+      const { assignment, exam, attempt: existing } = await this.lockAssignedExam(manager, studentId, testId);
       if (existing?.isActive && existing.submittedAt) {
         const questions = await manager.findBy(ExamQuestion, { testId });
         return { submittedAt: existing.submittedAt, grade: gradeExam(questions, existing.answers) };
       }
+      requireOpenExam(examAccess(exam.pageSnapshot.timing ?? {}, submittedAt, existing?.isActive ? existing.startedAt : undefined));
       if (!draft || typeof draft !== 'object' || Array.isArray(draft)) throw new BadRequestException('Invalid answers');
 
       const questions = await manager.findBy(ExamQuestion, { testId });
@@ -159,12 +198,11 @@ export class ExamAssignmentService {
         }
         return [questionId, selected as string[]];
       }));
-      const submittedAt = new Date();
       await manager.save(ExamAttempt, {
         id: existing?.id,
         assignmentId: assignment.id,
         answers,
-        startedAt: existing?.startedAt ?? submittedAt,
+        startedAt: existing?.isActive ? existing.startedAt : submittedAt,
         submittedAt,
         createdBy: existing?.createdBy ?? studentId,
         updatedBy: studentId,
