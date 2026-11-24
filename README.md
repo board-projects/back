@@ -70,6 +70,14 @@ $ mau deploy
 
 With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
 
+## Public exam search
+
+Set `ELASTICSEARCH_URL` to the Elasticsearch endpoint before starting the backend. Set `ELASTICSEARCH_API_KEY` when the endpoint requires API-key authentication. The key needs permission to create the exam index, check whether it exists, search it, and index or delete its documents. The backend uses `dequizma-exams-v1` unless `ELASTICSEARCH_EXAM_INDEX` is set.
+
+Run the PostgreSQL migrations before restarting the backend. New and changed publications are indexed asynchronously. PostgreSQL enforces visibility on both exam reads and search results.
+
+Legacy anonymous links stored only in Redis are retired. Publish those Pages from their Boards to create new links with an explicit access setting. Public links already stored in PostgreSQL retain their references.
+
 ## Resources
 
 Check out a few resources that may come in handy when working with NestJS:

@@ -1,3 +1,4 @@
+import { validPublicationSettings } from './publication-settings';
 import { validateStructuredQuestion } from './structured-question';
 
 const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets', 'tables', 'questions'] as const;
@@ -114,7 +115,7 @@ function isItem(kind: ItemKind, id: string, item: unknown) {
       tableCellText(item.cells, item.rows.length, item.columns.length) && tableCellRuns(item.cellRuns, item.cells);
   }
   if (kind === 'sheets') {
-    return text(item.title, 80) &&
+    return validPublicationSettings(item) && text(item.title, 80) &&
       Number.isInteger(item.width) && number(item.width, 240, 4096) &&
       Number.isInteger(item.height) && number(item.height, 240, 4096) &&
       typeof item.dots === 'boolean' && (item.backgroundColor === undefined || color(item.backgroundColor)) && ['px', 'mm', 'cm', 'in'].includes(item.unit as string);

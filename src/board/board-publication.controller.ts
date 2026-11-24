@@ -8,12 +8,6 @@ type PublishBody = { access_token?: unknown; refresh_token?: unknown; layout?: u
 export class BoardPublicationController {
   constructor(private readonly auth: AuthService, private readonly publications: BoardPublicationService) {}
 
-  @Post(':reference/publish')
-  async publish(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: PublishBody) {
-    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
-    return this.publications.publish(user.id, reference, body?.layout);
-  }
-
   @Post(':reference/pages/:itemReference/preview')
   @HttpCode(200)
   async previewPage(
@@ -21,8 +15,8 @@ export class BoardPublicationController {
     @Param('itemReference', ParseUUIDPipe) itemReference: string,
     @Body() body?: PublishBody,
   ) {
-    await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
-    return this.publications.previewPage(reference, itemReference);
+    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.publications.previewPage(user.id, reference, itemReference);
   }
 
   @Post(':reference/pages/:itemReference/publish')
@@ -33,11 +27,6 @@ export class BoardPublicationController {
   ) {
     const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
     return this.publications.publishPage(user.id, reference, itemReference, body?.snapshot);
-  }
-
-  @Post('publications')
-  publishPublicPage(@Body() draft: unknown) {
-    return this.publications.publishPublicPage(draft);
   }
 
   @Get(':reference/published')
