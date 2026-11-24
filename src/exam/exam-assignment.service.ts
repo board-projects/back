@@ -10,6 +10,7 @@ import { Board } from '../board/entities/board.entity';
 import { validStructuredAnswer } from '../board/structured-question';
 import { publicSnapshot } from '../board/public-board-snapshot';
 import { User } from '../user/entities/user.entity';
+import { gradeExam } from './exam-grading';
 import { ExamAttempt } from './entities/exam-attempt.entity';
 import { ExamAssignment } from './entities/exam-assignment.entity';
 import { ExamQuestion } from './entities/exam-question.entity';
@@ -105,7 +106,9 @@ export class ExamAssignmentService {
     if (!assignment) throw new NotFoundException('Assigned exam not found');
     const page = await this.read(studentId, assignment.id);
     const attempt = await this.dataSource.getRepository(ExamAttempt).findOneBy({ assignmentId: assignment.id, isActive: true });
-    return { ...page, submittedAt: attempt?.submittedAt ?? null, answers: attempt?.submittedAt ? attempt.answers : {} };
+    if (!attempt?.submittedAt) return { ...page, submittedAt: null, answers: {} };
+    const questions = await this.dataSource.getRepository(ExamQuestion).findBy({ testId });
+    return { ...page, submittedAt: attempt.submittedAt, answers: attempt.answers, grade: gradeExam(questions, attempt.answers) };
   }
 
   async submitTest(studentId: string, testId: string, draft: unknown) {
@@ -118,7 +121,10 @@ export class ExamAssignmentService {
       if (!assignment || !exam) throw new NotFoundException('Assigned exam not found');
 
       const existing = await manager.findOneBy(ExamAttempt, { assignmentId: assignment.id });
-      if (existing?.isActive && existing.submittedAt) return { submittedAt: existing.submittedAt };
+      if (existing?.isActive && existing.submittedAt) {
+        const questions = await manager.findBy(ExamQuestion, { testId });
+        return { submittedAt: existing.submittedAt, grade: gradeExam(questions, existing.answers) };
+      }
       if (!draft || typeof draft !== 'object' || Array.isArray(draft)) throw new BadRequestException('Invalid answers');
 
       const questions = await manager.findBy(ExamQuestion, { testId });
@@ -165,7 +171,7 @@ export class ExamAssignmentService {
         updatedAt: submittedAt,
         isActive: true,
       });
-      return { submittedAt };
+      return { submittedAt, grade: gradeExam(questions, answers) };
     });
   }
 }
