@@ -43,7 +43,7 @@ function publicOptions(options: Option[]) {
 
 export function publicStructuredQuestion(item: RecordValue): RecordValue | undefined {
   const { kind, id, x, y, width, height, label, prompt, textFormat } = item;
-  const frame = { kind, id, x, y, width, height, label, prompt, textFormat };
+  const frame = { kind, id, x, y, width, height, label, prompt, ...(textFormat === undefined ? {} : { textFormat }) };
   switch (kind) {
     case 'matching': {
       const pairs = Array.isArray(item.pairs) ? item.pairs.filter(isPair) : undefined;
