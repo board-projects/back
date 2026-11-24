@@ -4,6 +4,7 @@ import { isEmail } from 'class-validator';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { DataSource, In, Repository } from 'typeorm';
+import { countClozeBlanks } from '../board/cloze-content';
 import { capturePageDraft } from '../board/board-page-capture';
 import { Board } from '../board/entities/board.entity';
 import { publicSnapshot } from '../board/public-board-snapshot';
@@ -119,12 +120,22 @@ export class ExamAssignmentService {
       if (existing?.isActive && existing.submittedAt) return { submittedAt: existing.submittedAt };
       if (!draft || typeof draft !== 'object' || Array.isArray(draft)) throw new BadRequestException('Invalid answers');
 
-      const questions = await manager.findBy(ExamQuestion, { testId, kind: 'questions' });
-      const optionsByQuestion = new Map(questions.map(({ sourceItemId, question }) => [
-        sourceItemId, Array.isArray(question.options) ? question.options as Array<{ id: string; correct?: boolean }> : [],
-      ]));
+      const questions = await manager.findBy(ExamQuestion, { testId });
+      const questionsById = new Map(questions.map((question) => [question.sourceItemId, question]));
       const answers = Object.fromEntries(Object.entries(draft).map(([questionId, selected]) => {
-        const options = optionsByQuestion.get(questionId);
+        const entry = questionsById.get(questionId);
+        if (entry?.kind === 'clozeTests') {
+          const content = entry.question.content;
+          if (typeof content !== 'string' || !Array.isArray(selected) ||
+              selected.length !== countClozeBlanks(content) ||
+              selected.some((value) => typeof value !== 'string')) {
+            throw new BadRequestException('Invalid blank answers for this exam');
+          }
+          return [questionId, selected as string[]];
+        }
+
+        const options = entry?.kind === 'questions' && Array.isArray(entry.question.options)
+          ? entry.question.options as Array<{ id: string; correct?: boolean }> : undefined;
         if (!options || !Array.isArray(selected) || selected.length > options.length ||
             (options.filter(({ correct }) => correct).length <= 1 && selected.length > 1) ||
             new Set(selected).size !== selected.length ||
