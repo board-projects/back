@@ -2,6 +2,8 @@ type RecordValue = Record<string, unknown>;
 type Option = { id: string; text: string };
 type Pair = { left: Option; right: Option };
 
+const ESSAY_ANSWER_LIMIT = 10_000;
+
 const isRecord = (value: unknown): value is RecordValue =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const isId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -16,6 +18,8 @@ function distinctOptions(options: Option[]): boolean {
 
 export function validateStructuredQuestion(item: RecordValue): boolean {
   switch (item.kind) {
+    case 'essay':
+      return true;
     case 'matching': {
       const { pairs } = item;
       return Array.isArray(pairs) && pairs.length >= 2 && pairs.length <= 50 &&
@@ -45,6 +49,8 @@ export function publicStructuredQuestion(item: RecordValue): RecordValue | undef
   const { kind, id, x, y, width, height, label, prompt, textFormat } = item;
   const frame = { kind, id, x, y, width, height, label, prompt, ...(textFormat === undefined ? {} : { textFormat }) };
   switch (kind) {
+    case 'essay':
+      return frame;
     case 'matching': {
       const pairs = Array.isArray(item.pairs) ? item.pairs.filter(isPair) : undefined;
       return {
@@ -64,6 +70,8 @@ export function publicStructuredQuestion(item: RecordValue): RecordValue | undef
 
 export function validStructuredAnswer(item: RecordValue, answer: string[]): boolean | undefined {
   switch (item.kind) {
+    case 'essay':
+      return answer.length === 1 && isText(answer[0], ESSAY_ANSWER_LIMIT);
     case 'matching': {
       const pairs = Array.isArray(item.pairs) ? item.pairs.filter(isPair) : [];
       const left = new Set(pairs.map((pair) => pair.left.id));
