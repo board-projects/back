@@ -7,6 +7,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { countClozeBlanks } from '../board/cloze-content';
 import { capturePageDraft } from '../board/board-page-capture';
 import { Board } from '../board/entities/board.entity';
+import { validStructuredAnswer } from '../board/structured-question';
 import { publicSnapshot } from '../board/public-board-snapshot';
 import { User } from '../user/entities/user.entity';
 import { ExamAttempt } from './entities/exam-attempt.entity';
@@ -132,6 +133,14 @@ export class ExamAssignmentService {
             throw new BadRequestException('Invalid blank answers for this exam');
           }
           return [questionId, selected as string[]];
+        }
+
+        if (entry?.kind === 'questions' && Array.isArray(selected) && selected.every((value) => typeof value === 'string')) {
+          const valid = validStructuredAnswer(entry.question, selected);
+          if (valid !== undefined) {
+            if (!valid) throw new BadRequestException('Invalid answer for this exam');
+            return [questionId, selected as string[]];
+          }
         }
 
         const options = entry?.kind === 'questions' && Array.isArray(entry.question.options)

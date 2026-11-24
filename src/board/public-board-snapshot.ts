@@ -1,15 +1,21 @@
 import { redactClozeAnswers } from './cloze-content';
+import { publicStructuredQuestion } from './structured-question';
 import type { BoardUpdate } from './board.protocol';
 
 export function publicSnapshot(snapshot: BoardUpdate): BoardUpdate {
   return {
     ...snapshot,
     changes: snapshot.changes.map((change) => {
-      if (change.kind === 'questions' && Array.isArray(change.item?.options)) {
-        const options = change.item.options as Array<{ id: string; text: string; correct?: boolean }>;
+      const item = change.item;
+      if (change.kind === 'questions' && item) {
+        const structured = publicStructuredQuestion(item);
+        if (structured) return { ...change, item: structured };
+      }
+      if (change.kind === 'questions' && Array.isArray(item?.options)) {
+        const options = item.options as Array<{ id: string; text: string; correct?: boolean }>;
         const multiple = options.some((option) => option.correct !== undefined)
-          ? options.filter((option) => option.correct).length > 1 : change.item.multiple === true;
-        return { ...change, item: { ...change.item, multiple, options: options.map(({ id, text }) => ({ id, text })) } };
+          ? options.filter((option) => option.correct).length > 1 : item.multiple === true;
+        return { ...change, item: { ...item, multiple, options: options.map(({ id, text }) => ({ id, text })) } };
       }
       if (change.kind !== 'clozeTests' || typeof change.item?.content !== 'string') return change;
       const content = redactClozeAnswers(change.item.content);

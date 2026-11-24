@@ -1,3 +1,5 @@
+import { validateStructuredQuestion } from './structured-question';
+
 const ITEM_KINDS = ['shapes', 'codeBlocks', 'clozeTests', 'connections', 'lines', 'sheets', 'tables', 'questions'] as const;
 type ItemKind = typeof ITEM_KINDS[number];
 
@@ -66,8 +68,10 @@ function tableCellRuns(value: unknown, cells: unknown): boolean {
 }
 
 function isQuestion(item: Record<string, unknown>): boolean {
-  if (!text(item.label, 80) || typeof item.prompt !== 'string' || !Array.isArray(item.options) ||
-      item.options.length < 2 || !number(item.width, 200, 4000) || !number(item.height, 160, 4000)) return false;
+  if (!text(item.label, 80) || typeof item.prompt !== 'string' ||
+      !number(item.width, 200, 4000) || !number(item.height, 160, 4000)) return false;
+  if (item.kind !== undefined && item.kind !== 'true_false') return validateStructuredQuestion(item);
+  if (!Array.isArray(item.options) || item.options.length < 2) return false;
 
   const ids = new Set<string>();
   for (const option of item.options) {
@@ -75,7 +79,10 @@ function isQuestion(item: Record<string, unknown>): boolean {
         typeof option.text !== 'string' || typeof option.correct !== 'boolean') return false;
     ids.add(option.id);
   }
-  return true;
+  if (item.kind !== 'true_false') return true;
+  return ids.size === 2 && ids.has('true') && ids.has('false') &&
+    item.options.every(({ id, text }) => text === (id === 'true' ? 'True' : 'False')) &&
+    item.options.filter(({ correct }) => correct).length === 1;
 }
 
 function isItem(kind: ItemKind, id: string, item: unknown) {
