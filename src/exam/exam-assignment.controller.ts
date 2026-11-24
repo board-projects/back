@@ -25,4 +25,17 @@ export class ExamAssignmentController {
     const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
     return this.assignments.read(user.id, assignmentId);
   }
+  @Post('test/:reference')
+  @HttpCode(200)
+  async readTest(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: Session) {
+    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.assignments.readTest(user.id, reference);
+  }
+
+  @Post('test/:reference/submit')
+  @HttpCode(200)
+  async submitTest(@Param('reference', ParseUUIDPipe) reference: string, @Body() body?: Session & { answers?: unknown }) {
+    const user = await this.auth.requireSessionUser(body?.access_token, body?.refresh_token);
+    return this.assignments.submitTest(user.id, reference, body?.answers);
+  }
 }
