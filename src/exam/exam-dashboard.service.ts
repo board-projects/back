@@ -34,16 +34,18 @@ export class ExamDashboardService {
       .leftJoin(ExamAttempt, 'attempt', 'attempt.assignmentId = assignment.id AND attempt.isActive')
       .select('assignment.id', 'id')
       .addSelect('exam.label', 'label')
+      .addSelect('exam.id', 'testId')
       .addSelect('attempt.id', 'attemptId')
       .addSelect('attempt.submittedAt', 'submittedAt')
       .where('assignment.studentId = :studentId AND assignment.isActive', { studentId })
       .orderBy('assignment.createdAt', 'DESC')
       .addOrderBy('assignment.id', 'ASC')
-      .getRawMany<{ id: string; label: string; attemptId: string | null; submittedAt: Date | null }>();
+      .getRawMany<{ id: string; label: string; testId: string; attemptId: string | null; submittedAt: Date | null }>();
 
-    return assignments.map(({ id, label, attemptId, submittedAt }) => ({
+    return assignments.map(({ id, label, testId, attemptId, submittedAt }) => ({
       id,
       label,
+      testId,
       status: submittedAt ? 'submitted' : attemptId ? 'in_progress' : 'assigned',
     }));
   }

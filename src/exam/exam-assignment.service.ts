@@ -8,6 +8,7 @@ import { capturePageDraft } from '../board/board-page-capture';
 import { Board } from '../board/entities/board.entity';
 import { publicSnapshot } from '../board/public-board-snapshot';
 import { User } from '../user/entities/user.entity';
+import { ExamAttempt } from './entities/exam-attempt.entity';
 import { ExamAssignment } from './entities/exam-assignment.entity';
 import { ExamQuestion } from './entities/exam-question.entity';
 import { Exam, type ExamPageSnapshot } from './entities/exam.entity';
@@ -95,6 +96,56 @@ export class ExamAssignmentService {
     if (!assignment) throw new NotFoundException('Assigned exam not found');
     const exam = await this.exams.findOneBy({ id: assignment.testId, status: 'published', isActive: true });
     if (!exam) throw new NotFoundException('Assigned exam not found');
-    return { title: exam.label, layout: exam.pageSnapshot.layout, snapshot: publicSnapshot(exam.pageSnapshot.snapshot) };
+    return { testId: exam.id, title: exam.label, layout: exam.pageSnapshot.layout, snapshot: publicSnapshot(exam.pageSnapshot.snapshot) };
+  }
+  async readTest(studentId: string, testId: string) {
+    const assignment = await this.assignments.findOneBy({ testId, studentId, isActive: true });
+    if (!assignment) throw new NotFoundException('Assigned exam not found');
+    const page = await this.read(studentId, assignment.id);
+    const attempt = await this.dataSource.getRepository(ExamAttempt).findOneBy({ assignmentId: assignment.id, isActive: true });
+    return { ...page, submittedAt: attempt?.submittedAt ?? null, answers: attempt?.submittedAt ? attempt.answers : {} };
+  }
+
+  async submitTest(studentId: string, testId: string, draft: unknown) {
+    return this.dataSource.transaction(async (manager) => {
+      const assignment = await manager.findOne(ExamAssignment, {
+        where: { testId, studentId, isActive: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const exam = assignment && await manager.findOneBy(Exam, { id: testId, status: 'published', isActive: true });
+      if (!assignment || !exam) throw new NotFoundException('Assigned exam not found');
+
+      const existing = await manager.findOneBy(ExamAttempt, { assignmentId: assignment.id });
+      if (existing?.isActive && existing.submittedAt) return { submittedAt: existing.submittedAt };
+      if (!draft || typeof draft !== 'object' || Array.isArray(draft)) throw new BadRequestException('Invalid answers');
+
+      const questions = await manager.findBy(ExamQuestion, { testId, kind: 'questions' });
+      const optionsByQuestion = new Map(questions.map(({ sourceItemId, question }) => [
+        sourceItemId, Array.isArray(question.options) ? question.options as Array<{ id: string; correct?: boolean }> : [],
+      ]));
+      const answers = Object.fromEntries(Object.entries(draft).map(([questionId, selected]) => {
+        const options = optionsByQuestion.get(questionId);
+        if (!options || !Array.isArray(selected) || selected.length > options.length ||
+            (options.filter(({ correct }) => correct).length <= 1 && selected.length > 1) ||
+            new Set(selected).size !== selected.length ||
+            selected.some((value) => typeof value !== 'string' || !options.some(({ id }) => id === value))) {
+          throw new BadRequestException('Invalid choice for this exam');
+        }
+        return [questionId, selected as string[]];
+      }));
+      const submittedAt = new Date();
+      await manager.save(ExamAttempt, {
+        id: existing?.id,
+        assignmentId: assignment.id,
+        answers,
+        startedAt: existing?.startedAt ?? submittedAt,
+        submittedAt,
+        createdBy: existing?.createdBy ?? studentId,
+        updatedBy: studentId,
+        updatedAt: submittedAt,
+        isActive: true,
+      });
+      return { submittedAt };
+    });
   }
 }
