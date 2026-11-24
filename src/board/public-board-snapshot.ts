@@ -1,3 +1,4 @@
+import { redactClozeAnswers } from './cloze-content';
 import type { BoardUpdate } from './board.protocol';
 
 export function publicSnapshot(snapshot: BoardUpdate): BoardUpdate {
@@ -11,7 +12,7 @@ export function publicSnapshot(snapshot: BoardUpdate): BoardUpdate {
         return { ...change, item: { ...change.item, multiple, options: options.map(({ id, text }) => ({ id, text })) } };
       }
       if (change.kind !== 'clozeTests' || typeof change.item?.content !== 'string') return change;
-      const content = change.item.content.replace(/\[[^\]]*\]|\{\{[^}]*\}\}/g, '[ ]');
+      const content = redactClozeAnswers(change.item.content);
       return { ...change, item: { ...change.item, content } };
     }),
   };
