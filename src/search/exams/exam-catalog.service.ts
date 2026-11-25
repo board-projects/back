@@ -1,21 +1,13 @@
 import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Exam } from '../exam/entities/exam.entity';
+import { Exam } from '../../exam/entities/exam.entity';
 import { examSearchDocument } from './exam-search-document';
-import { ExamSearchRepository } from './exam-search.repository';
-import { examLevels } from './publication-settings';
+import { ExamIndexMissing, ExamSearchRepository, examSorts } from './exam-search.repository';
+import { examLevels } from '../../board/publication-settings';
 
 type SearchInput = Record<string, unknown>;
-type SearchHit = { _id: string };
-
 const pageSize = 20;
-const sortOptions = {
-  relevance: ['_score', { publishedAt: 'desc' }, 'reference'],
-  newest: [{ publishedAt: 'desc' }, 'reference'],
-  oldest: [{ publishedAt: 'asc' }, 'reference'],
-  title: ['title.sort', 'reference'],
-};
 
 function searchValue(input: unknown, maximum: number, lower = true): string {
   if (input === undefined) return '';
@@ -58,6 +50,12 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
     return this.indexReady;
   }
 
+  private resetMissingIndex(error: unknown) {
+    if (!(error instanceof ExamIndexMissing)) return;
+    this.indexReady = undefined;
+    this.index.resetIndex();
+  }
+
   private async reconcile() {
     if (this.running) return;
     this.running = true;
@@ -70,30 +68,16 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
           .setLock('pessimistic_write').setOnLocked('skip_locked').getMany();
         if (!pages.length) return;
 
-        const operations = pages.flatMap<Record<string, unknown>>((page) => {
-          const _id = page.id;
-          if (page.visibility !== 'public' || page.status !== 'published' || !page.isActive) return [{ delete: { _id } }];
-          return [{ index: { _id } }, examSearchDocument(page)];
-        });
-        const response = await this.index.request('/_bulk?refresh=wait_for', 'POST',
-          operations.map((operation) => JSON.stringify(operation)).join('\n') + '\n', 'application/x-ndjson');
-        if (!response.ok) {
-          if (response.status === 404) {
-            this.indexReady = undefined;
-            this.index.resetIndex();
-          }
-          throw new Error(`Elasticsearch bulk write returned ${response.status}`);
-        }
-        const result = await response.json() as { items: Array<Record<string, { status: number }>> };
-        const synced = pages.filter((_, index) => {
-          const item = result.items[index];
-          return (item?.index?.status >= 200 && item.index.status < 300) ||
-            item?.delete?.status === 200 || item?.delete?.status === 404;
-        });
-        if (synced.length) await repository.update({ id: In(synced.map((page) => page.id)) }, { searchPending: false });
+        const synced = await this.index.synchronize(pages.map((page) => ({
+          id: page.id,
+          document: page.visibility === 'public' && page.status === 'published' && page.isActive
+            ? examSearchDocument(page) : undefined,
+        })));
+        if (synced.length) await repository.update({ id: In(synced) }, { searchPending: false });
         if (synced.length !== pages.length) this.logger.warn('Some exam catalog updates will be retried');
       });
     } catch (error) {
+      this.resetMissingIndex(error);
       this.logger.warn(error instanceof Error ? error.message : 'Exam catalog update failed');
     } finally {
       this.running = false;
@@ -107,31 +91,17 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
     const locale = searchValue(input.locale, 12);
     const sort = searchValue(input.sort, 16) || (query ? 'relevance' : 'newest');
     const page = Number(searchValue(input.page, 3) || '1');
-    if (!Object.hasOwn(sortOptions, sort) || (level && !examLevels.includes(level)) ||
+    if (!Object.hasOwn(examSorts, sort) || (level && !examLevels.includes(level)) ||
         (locale && !/^[a-z]{2,3}(?:-[a-z]{2})?$/.test(locale)) ||
         !Number.isInteger(page) || page < 1 || page > 499) throw new BadRequestException('Invalid search filter');
 
     try {
       await this.prepareIndex();
-      const response = await this.index.request('/_search', 'POST', JSON.stringify({
-        _source: false,
-        from: (page - 1) * pageSize,
-        size: pageSize + 1,
-        sort: sortOptions[sort as keyof typeof sortOptions],
-        query: { bool: {
-          must: query ? [{ multi_match: { query, fields: ['title^4', 'questions'] } }] : [],
-          filter: Object.entries({ topic, level, locale }).filter(([, value]) => value).map(([key, value]) => ({ term: { [key]: value } })),
-        } },
-      }));
-      if (!response.ok) {
-        if (response.status === 404) {
-            this.indexReady = undefined;
-            this.index.resetIndex();
-          }
-        throw new Error(`Elasticsearch search returned ${response.status}`);
-      }
-      const { hits } = await response.json() as { hits: { hits: SearchHit[] } };
-      const references = hits.hits.slice(0, pageSize).map(({ _id }) => _id);
+      const hits = await this.index.search({
+        query, filters: { topic, level, locale }, sort: sort as keyof typeof examSorts,
+        offset: (page - 1) * pageSize, size: pageSize + 1,
+      });
+      const references = hits.slice(0, pageSize);
       const publications = references.length ? await this.publications.find({
         select: { id: true, label: true, topic: true, level: true, locale: true },
         where: { id: In(references), visibility: 'public', status: 'published', isActive: true, searchPending: false },
@@ -139,8 +109,9 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
       const byId = new Map(publications.map(({ id, label, topic, level, locale }) => [
         id, { reference: id, title: label, topic, level, locale },
       ]));
-      return { items: references.flatMap((id) => byId.get(id) ?? []), hasNext: page < 499 && hits.hits.length > pageSize };
-    } catch {
+      return { items: references.flatMap((id) => byId.get(id) ?? []), hasNext: page < 499 && hits.length > pageSize };
+    } catch (error) {
+      this.resetMissingIndex(error);
       throw new ServiceUnavailableException('Exam search is temporarily unavailable');
     }
   }

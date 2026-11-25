@@ -1,5 +1,5 @@
-import type { Exam } from '../exam/entities/exam.entity';
-import { publicSnapshot } from './public-board-snapshot';
+import type { Exam } from '../../exam/entities/exam.entity';
+import { publicSnapshot } from '../../board/public-board-snapshot';
 
 export function examSearchDocument(exam: Exam) {
   const questions = publicSnapshot(exam.pageSnapshot.snapshot).changes.flatMap(({ kind, item }) => {
