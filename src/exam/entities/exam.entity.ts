@@ -1,10 +1,8 @@
 import type { BoardUpdate } from '../../board/board.protocol';
-import type { SheetLayout } from '../../board/entities/published-board.entity';
+import type { SheetLayout } from '../../board/sheet-layout';
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-import type { ExamTiming } from '../exam-timing';
-
-export type ExamPageSnapshot = { layout: SheetLayout; snapshot: BoardUpdate; timing?: ExamTiming };
+export type ExamPageSnapshot = { layout: SheetLayout; snapshot: BoardUpdate };
 
 @Entity({ name: 'tests', synchronize: false })
 export class Exam {
@@ -29,6 +27,33 @@ export class Exam {
   @Column({ type: 'varchar', length: 16 })
   status: 'draft' | 'published' | 'archived';
 
+  @Column({ type: 'varchar', length: 7, default: 'private' })
+  visibility: 'public' | 'private';
+
+  @Column({ type: 'varchar', length: 80, default: '' })
+  topic: string;
+
+  @Column({ type: 'varchar', length: 16, default: '' })
+  level: string;
+
+  @Column({ type: 'varchar', length: 12, default: '' })
+  locale: string;
+
+  @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
+  publishedAt: Date | null;
+
+  @Column({ name: 'opens_at', type: 'timestamptz', nullable: true })
+  opensAt: Date | null;
+
+  @Column({ name: 'closes_at', type: 'timestamptz', nullable: true })
+  closesAt: Date | null;
+
+  @Column({ name: 'duration_minutes', type: 'integer', nullable: true })
+  durationMinutes: number | null;
+
+  @Column({ name: 'search_pending', type: 'boolean', default: false })
+  searchPending: boolean;
+
   @Column({ name: 'created_by', type: 'uuid', nullable: true })
   createdBy: string | null;
 
@@ -37,6 +62,9 @@ export class Exam {
 
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
 
   @Column({ name: 'is_active', type: 'boolean' })
   isActive: boolean;

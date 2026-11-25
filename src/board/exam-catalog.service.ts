@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { PublishedBoard } from './entities/published-board.entity';
-import { publicSnapshot } from './public-board-snapshot';
+import { Exam } from '../exam/entities/exam.entity';
+import { examSearchDocument } from './exam-search-document';
+import { ExamSearchRepository } from './exam-search.repository';
 import { examLevels } from './publication-settings';
 
 type SearchInput = Record<string, unknown>;
@@ -25,16 +26,16 @@ function searchValue(input: unknown, maximum: number, lower = true): string {
 @Injectable()
 export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ExamCatalogService.name);
-  private readonly endpoint = process.env.ELASTICSEARCH_URL?.replace(/\/$/, '');
-  private readonly index = process.env.ELASTICSEARCH_EXAM_INDEX || 'dequizma-exams-v1';
-  private initialized?: Promise<void>;
   private interval?: ReturnType<typeof setInterval>;
   private running = false;
 
-  constructor(@InjectRepository(PublishedBoard) private readonly publications: Repository<PublishedBoard>) {}
+  constructor(
+    @InjectRepository(Exam) private readonly publications: Repository<Exam>,
+    private readonly index: ExamSearchRepository,
+  ) {}
 
   onModuleInit() {
-    if (!this.endpoint) return;
+    if (!this.index.configured) return;
     void this.reconcile();
     this.interval = setInterval(() => void this.reconcile(), 3000);
     this.interval.unref();
@@ -44,79 +45,43 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.interval);
   }
 
-  private request(path: string, method: string, body?: string, contentType = 'application/json') {
-    if (!this.endpoint) throw new Error('ELASTICSEARCH_URL is missing');
-    const apiKey = process.env.ELASTICSEARCH_API_KEY;
-    return fetch(`${this.endpoint}/${encodeURIComponent(this.index)}${path}`, {
-      method,
-      headers: { 'Content-Type': contentType, ...(apiKey && { Authorization: `ApiKey ${apiKey}` }) },
-      body,
-      signal: AbortSignal.timeout(4000),
-    });
-  }
+  private indexReady?: Promise<void>;
 
-  private async createIndex() {
-    const response = await this.request('', 'HEAD');
-    if (response.ok) return;
-    if (response.status !== 404) throw new Error(`Elasticsearch index lookup returned ${response.status}`);
-    const created = await this.request('', 'PUT', JSON.stringify({
-      mappings: {
-        dynamic: 'strict',
-        properties: {
-          reference: { type: 'keyword' },
-          title: { type: 'text', fields: { sort: { type: 'keyword' } } },
-          questions: { type: 'text' },
-          topic: { type: 'keyword' },
-          level: { type: 'keyword' },
-          locale: { type: 'keyword' },
-          publishedAt: { type: 'date' },
-        },
-      },
-    }));
-    if (created.ok) {
-      await this.publications.update({ searchPending: false }, { searchPending: true });
-      return;
-    }
-    const existing = await this.request('', 'HEAD');
-    if (!existing.ok) throw new Error(`Elasticsearch index creation returned ${created.status}`);
-  }
-
-  private ensureIndex() {
-    this.initialized ??= this.createIndex().catch((error: unknown) => {
-      this.initialized = undefined;
+  private prepareIndex() {
+    this.indexReady ??= this.index.ensureIndex().then(async (created) => {
+      if (created) await this.publications.update({ visibility: 'public', searchPending: false }, { searchPending: true });
+    }).catch((error: unknown) => {
+      this.indexReady = undefined;
+      this.index.resetIndex();
       throw error;
     });
-    return this.initialized;
+    return this.indexReady;
   }
 
   private async reconcile() {
     if (this.running) return;
     this.running = true;
     try {
-      await this.ensureIndex();
+      await this.prepareIndex();
       await this.publications.manager.transaction(async (manager) => {
-        const repository = manager.getRepository(PublishedBoard);
+        const repository = manager.getRepository(Exam);
         const pages = await repository.createQueryBuilder('publication')
           .where({ searchPending: true }).orderBy('publication.publishedAt', 'ASC').take(30)
           .setLock('pessimistic_write').setOnLocked('skip_locked').getMany();
         if (!pages.length) return;
 
         const operations = pages.flatMap<Record<string, unknown>>((page) => {
-          const _id = page.publicReference;
-          if (page.visibility !== 'public') return [{ delete: { _id } }];
-          const questions = publicSnapshot(page.snapshot).changes.flatMap(({ kind, item }) => {
-            const content = kind === 'questions' ? item?.prompt : kind === 'clozeTests' ? item?.content : undefined;
-            return typeof content === 'string' ? [content] : [];
-          }).join(' ').slice(0, 40_000);
-          return [{ index: { _id } }, {
-            reference: _id, title: page.title, questions, topic: page.topic.toLowerCase(),
-            level: page.level, locale: page.locale, publishedAt: page.publishedAt,
-          }];
+          const _id = page.id;
+          if (page.visibility !== 'public' || page.status !== 'published' || !page.isActive) return [{ delete: { _id } }];
+          return [{ index: { _id } }, examSearchDocument(page)];
         });
-        const response = await this.request('/_bulk?refresh=wait_for', 'POST',
+        const response = await this.index.request('/_bulk?refresh=wait_for', 'POST',
           operations.map((operation) => JSON.stringify(operation)).join('\n') + '\n', 'application/x-ndjson');
         if (!response.ok) {
-          if (response.status === 404) this.initialized = undefined;
+          if (response.status === 404) {
+            this.indexReady = undefined;
+            this.index.resetIndex();
+          }
           throw new Error(`Elasticsearch bulk write returned ${response.status}`);
         }
         const result = await response.json() as { items: Array<Record<string, { status: number }>> };
@@ -125,7 +90,7 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
           return (item?.index?.status >= 200 && item.index.status < 300) ||
             item?.delete?.status === 200 || item?.delete?.status === 404;
         });
-        if (synced.length) await repository.update({ publicReference: In(synced.map((page) => page.publicReference)) }, { searchPending: false });
+        if (synced.length) await repository.update({ id: In(synced.map((page) => page.id)) }, { searchPending: false });
         if (synced.length !== pages.length) this.logger.warn('Some exam catalog updates will be retried');
       });
     } catch (error) {
@@ -147,8 +112,8 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
         !Number.isInteger(page) || page < 1 || page > 499) throw new BadRequestException('Invalid search filter');
 
     try {
-      await this.ensureIndex();
-      const response = await this.request('/_search', 'POST', JSON.stringify({
+      await this.prepareIndex();
+      const response = await this.index.request('/_search', 'POST', JSON.stringify({
         _source: false,
         from: (page - 1) * pageSize,
         size: pageSize + 1,
@@ -159,17 +124,20 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
         } },
       }));
       if (!response.ok) {
-        if (response.status === 404) this.initialized = undefined;
+        if (response.status === 404) {
+            this.indexReady = undefined;
+            this.index.resetIndex();
+          }
         throw new Error(`Elasticsearch search returned ${response.status}`);
       }
       const { hits } = await response.json() as { hits: { hits: SearchHit[] } };
       const references = hits.hits.slice(0, pageSize).map(({ _id }) => _id);
       const publications = references.length ? await this.publications.find({
-        select: { publicReference: true, title: true, topic: true, level: true, locale: true },
-        where: { publicReference: In(references), visibility: 'public', searchPending: false },
+        select: { id: true, label: true, topic: true, level: true, locale: true },
+        where: { id: In(references), visibility: 'public', status: 'published', isActive: true, searchPending: false },
       }) : [];
-      const byId = new Map(publications.map(({ publicReference, title, topic, level, locale }) => [
-        publicReference, { reference: publicReference, title, topic, level, locale },
+      const byId = new Map(publications.map(({ id, label, topic, level, locale }) => [
+        id, { reference: id, title: label, topic, level, locale },
       ]));
       return { items: references.flatMap((id) => byId.get(id) ?? []), hasNext: page < 499 && hits.hits.length > pageSize };
     } catch {

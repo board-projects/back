@@ -72,9 +72,11 @@ With Mau, you can deploy your application in just a few clicks, allowing you to 
 
 ## Public exam search
 
-Set `ELASTICSEARCH_URL` to the Elasticsearch endpoint before starting the backend. Set `ELASTICSEARCH_API_KEY` when the endpoint requires API-key authentication. The key needs permission to create the exam index, check whether it exists, search it, and index or delete its documents. The backend uses `dequizma-exams-v1` unless `ELASTICSEARCH_EXAM_INDEX` is set.
+Set `ELASTICSEARCH_URL` to the Elasticsearch endpoint before starting the backend. Set `ELASTICSEARCH_API_KEY` when the endpoint requires API-key authentication. The key needs permission to create the exam index, check whether it exists, search it, and index or delete its documents. The backend uses `dequizma-exams-v2` unless `ELASTICSEARCH_EXAM_INDEX` is set.
 
-Run the PostgreSQL migrations before restarting the backend. New and changed publications are indexed asynchronously. PostgreSQL enforces visibility on both exam reads and search results.
+Back up PostgreSQL and pause writes before running the migration that consolidates publications into `tests`. It preserves PostgreSQL public references as exam IDs and removes the old publication table after copying its data. Rollback requires the pre-migration backup. Restart the backend after migration.
+
+Publish and Assign share the exam version when the content, answer key, and timing match. The search worker extracts public question text and metadata from `tests`, then indexes changed exams asynchronously. PostgreSQL enforces visibility on exam reads and search results.
 
 Legacy anonymous links stored only in Redis are retired. Publish those Pages from their Boards to create new links with an explicit access setting. Public links already stored in PostgreSQL retain their references.
 
