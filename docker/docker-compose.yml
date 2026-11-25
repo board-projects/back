@@ -17,6 +17,24 @@ services:
     ports:
       - "6379:6379"
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.26
+    restart: always
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      interval: 5s
+      timeout: 7s
+      retries: 12
+      start_period: 20s
+
   api:
     build:
       context: ..
@@ -31,13 +49,21 @@ services:
       DATABASE_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_API_KEY: ""
     volumes:
       - ../:/app
       - /app/node_modules
     command: yarn start:dev
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+  elasticsearch_data:
