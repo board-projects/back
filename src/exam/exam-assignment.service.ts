@@ -1,12 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { isEmail } from 'class-validator';
-import { randomUUID } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { countClozeBlanks } from '../board/cloze-content';
 import { capturePageDraft } from '../board/board-page-capture';
-import { Board } from '../board/entities/board.entity';
 import { validStructuredAnswer } from '../board/structured-question';
 import { publicSnapshot } from '../board/public-board-snapshot';
 import { User } from '../user/entities/user.entity';
@@ -15,7 +12,8 @@ import { gradeExam } from './exam-grading';
 import { ExamAttempt } from './entities/exam-attempt.entity';
 import { ExamAssignment } from './entities/exam-assignment.entity';
 import { ExamQuestion } from './entities/exam-question.entity';
-import { Exam, type ExamPageSnapshot } from './entities/exam.entity';
+import { findOrCreateExamVersion, lockExamBoard, timingForExam } from './exam-versions';
+import { Exam } from './entities/exam.entity';
 
 @Injectable()
 export class ExamAssignmentService {
@@ -33,17 +31,8 @@ export class ExamAssignmentService {
     const emails = [...new Set((recipients as string[]).map((email) => email.trim().toLowerCase()))];
     const page = capturePageDraft(pageId, draft);
     const timing = parseExamTiming(schedule);
-    const pageSnapshot: ExamPageSnapshot = {
-      layout: page.layout,
-      snapshot: publicSnapshot(page.snapshot),
-      ...(Object.keys(timing).length ? { timing } : {}),
-    };
-    const questions = page.snapshot.changes.flatMap(({ kind, id, item }) =>
-      item && (kind === 'questions' || kind === 'clozeTests') ? [{ sourceItemId: id, kind, question: item }] : []);
-
     return this.dataSource.transaction(async (manager) => {
-      const board = await manager.findOne(Board, { where: { reference: boardReference, ownerId: teacherId }, lock: { mode: 'pessimistic_write' } });
-      if (!board) throw new NotFoundException('Board not found');
+      await lockExamBoard(manager, teacherId, boardReference);
 
       const accounts = await manager.getRepository(User).createQueryBuilder('account')
         .select(['account.id', 'account.email'])
@@ -59,29 +48,7 @@ export class ExamAssignmentService {
       const unknownEmails = emails.filter((email) => !matches.get(email));
       if (!studentIds.length) return { assigned: 0, alreadyAssigned: 0, unknownEmails };
 
-      const previous = await manager.findOne(Exam, {
-        where: { teacherId, boardReference, pageId, status: 'published', isActive: true },
-        order: { createdAt: 'DESC', id: 'DESC' },
-      });
-      const previousQuestions = previous ? await manager.find(ExamQuestion, {
-        select: { sourceItemId: true, kind: true, question: true },
-        where: { testId: previous.id },
-        order: { position: 'ASC' },
-      }) : [];
-      const previousDefinitions = previousQuestions.map(({ sourceItemId, kind, question }) => ({ sourceItemId, kind, question }));
-      const sameVersion = previous && previous.label === page.title &&
-        isDeepStrictEqual(previous.pageSnapshot, pageSnapshot) && isDeepStrictEqual(previousDefinitions, questions);
-      const testId = sameVersion ? previous.id : randomUUID();
-
-      if (!sameVersion) {
-        await manager.save(Exam, {
-          id: testId, teacherId, boardReference, pageId, label: page.title, pageSnapshot,
-          status: 'published', createdBy: teacherId, updatedBy: teacherId,
-        });
-        if (questions.length) await manager.save(ExamQuestion, questions.map((question, position) => ({
-          ...question, position, testId, createdBy: teacherId, updatedBy: teacherId,
-        })));
-      }
+      const testId = await findOrCreateExamVersion(manager, teacherId, boardReference, pageId, page, timing);
 
       const existing = await manager.findBy(ExamAssignment, { testId, studentId: In(studentIds) });
       const existingByStudent = new Map(existing.map((assignment) => [assignment.studentId, assignment]));
@@ -114,8 +81,8 @@ export class ExamAssignmentService {
     if (!assignment || !exam) throw new NotFoundException('Assigned exam not found');
 
     const attempt = await this.dataSource.getRepository(ExamAttempt).findOneBy({ assignmentId: assignment.id, isActive: true });
-    const { layout, timing = {}, snapshot } = exam.pageSnapshot;
-    const access = examAccess(timing, new Date(), attempt?.startedAt);
+    const { layout, snapshot } = exam.pageSnapshot;
+    const access = examAccess(timingForExam(exam), new Date(), attempt?.startedAt);
     const page = { testId, title: exam.label, layout, access };
     if (!attempt?.submittedAt) {
       return { ...page, submittedAt: null, ...(access.status === 'open' ? { snapshot: publicSnapshot(snapshot) } : {}) };
@@ -142,7 +109,7 @@ export class ExamAssignmentService {
 
       const now = new Date();
       const activeAttempt = attempt?.isActive ? attempt : undefined;
-      const access = examAccess(exam.pageSnapshot.timing ?? {}, now, activeAttempt?.startedAt);
+      const access = examAccess(timingForExam(exam), now, activeAttempt?.startedAt);
       requireOpenExam(access, true);
       if (activeAttempt) return { startedAt: activeAttempt.startedAt };
       if (!access.durationMinutes) return { startedAt: null };
@@ -163,7 +130,7 @@ export class ExamAssignmentService {
         const questions = await manager.findBy(ExamQuestion, { testId });
         return { submittedAt: existing.submittedAt, grade: gradeExam(questions, existing.answers) };
       }
-      requireOpenExam(examAccess(exam.pageSnapshot.timing ?? {}, submittedAt, existing?.isActive ? existing.startedAt : undefined));
+      requireOpenExam(examAccess(timingForExam(exam), submittedAt, existing?.isActive ? existing.startedAt : undefined));
       if (!draft || typeof draft !== 'object' || Array.isArray(draft)) throw new BadRequestException('Invalid answers');
 
       const questions = await manager.findBy(ExamQuestion, { testId });

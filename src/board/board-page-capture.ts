@@ -1,8 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { parseBoardChanges, type BoardChange, type BoardUpdate } from './board.protocol';
-import type { SheetLayout } from './entities/published-board.entity';
+import type { SheetLayout } from './sheet-layout';
 
-type PageSnapshot = { title: string; layout: SheetLayout; snapshot: BoardUpdate };
+export type PageSnapshot = { title: string; layout: SheetLayout; snapshot: BoardUpdate };
 type Point = { x: number; y: number };
 
 export function captureBoardPage(board: BoardUpdate, itemReference: string): PageSnapshot {
