@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit,
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Exam } from '../../exam/entities/exam.entity';
-import { examSearchDocument } from './exam-search-document';
+import { examIndexBatchSize, synchronizeExamBatch } from './synchronize-exam-batch';
 import { ExamIndexMissing, ExamSearchRepository, examSorts } from './exam-search.repository';
 import { examLevels } from '../../board/publication-settings';
 
@@ -64,17 +64,10 @@ export class ExamCatalogService implements OnModuleInit, OnModuleDestroy {
       await this.publications.manager.transaction(async (manager) => {
         const repository = manager.getRepository(Exam);
         const pages = await repository.createQueryBuilder('publication')
-          .where({ searchPending: true }).orderBy('publication.publishedAt', 'ASC').take(30)
+          .where({ searchPending: true }).orderBy('publication.publishedAt', 'ASC').take(examIndexBatchSize)
           .setLock('pessimistic_write').setOnLocked('skip_locked').getMany();
-        if (!pages.length) return;
-
-        const synced = await this.index.synchronize(pages.map((page) => ({
-          id: page.id,
-          document: page.visibility === 'public' && page.status === 'published' && page.isActive
-            ? examSearchDocument(page) : undefined,
-        })));
-        if (synced.length) await repository.update({ id: In(synced) }, { searchPending: false });
-        if (synced.length !== pages.length) this.logger.warn('Some exam catalog updates will be retried');
+        const synced = await synchronizeExamBatch(repository, this.index, pages);
+        if (synced !== pages.length) this.logger.warn('Some exam catalog updates will be retried');
       });
     } catch (error) {
       this.resetMissingIndex(error);
