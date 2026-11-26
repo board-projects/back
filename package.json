@@ -6,7 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "search:exams:reindex": "node dist/search/commands/reindex-exams.js",
+    "search:tests:reindex": "node dist/search/commands/reindex-exams.js",
+    "search:exams:reindex": "npm run search:tests:reindex",
     "migration:run:prod": "node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
     "migration:run": "npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
     "migration:generate": "npx ts-node ./node_modules/typeorm/cli.js migration:generate -d src/data-source.ts",

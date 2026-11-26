@@ -80,13 +80,13 @@ Publish and Assign share the exam version when the content, answer key, and timi
 
 Legacy anonymous links stored only in Redis are retired. Publish those Pages from their Boards to create new links with an explicit access setting. Public links already stored in PostgreSQL retain their references.
 
-To fill or refresh the exam index after building the backend, run `npm run search:exams:reindex`. The command reads PostgreSQL and updates Elasticsearch in batches. It indexes public, active, published exams and deletes entries for other exams still present in PostgreSQL. It can be rerun after a failed batch and does not run migrations.
+To fill or refresh the exam index after building the backend, run `npm run search:tests:reindex`. The command reads PostgreSQL and updates Elasticsearch in batches. It indexes public, active, published exams and deletes entries for other exams still present in PostgreSQL. It can be rerun after a failed batch and does not run migrations.
 
 With the local Compose stack running:
 
 ```bash
 docker compose -f docker/docker-compose.yml exec api yarn build
-docker compose -f docker/docker-compose.yml exec api npm run search:exams:reindex
+docker compose -f docker/docker-compose.yml exec api npm run search:tests:reindex
 ```
 
 ## Resources
